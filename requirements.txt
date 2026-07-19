@@ -1,0 +1,11 @@
+﻿fastapi
+uvicorn
+scikit-learn
+sentence-transformers
+torch
+numpy
+pandas
+joblib
+python-dotenv
+requests
+python-multipart
