@@ -1,0 +1,21 @@
+﻿from datasets import load_from_disk
+
+print("=" * 50)
+print("DEEPSET DATASET")
+print("=" * 50)
+deepset = load_from_disk("data/deepset")
+print(deepset)
+print("\nColumn names:", deepset["train"].column_names)
+print("\nSample benign example:")
+print(deepset["train"][0])
+print("\nSample from later in the set:")
+print(deepset["train"][5])
+
+print("\n" + "=" * 50)
+print("SAFEGUARD DATASET")
+print("=" * 50)
+safeguard = load_from_disk("data/safeguard")
+print(safeguard)
+print("\nColumn names:", safeguard["train"].column_names)
+print("\nSample example:")
+print(safeguard["train"][0])

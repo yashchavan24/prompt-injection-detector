@@ -1,0 +1,23 @@
+﻿{
+  "manifest_version": 3,
+  "name": "Prompt Injection Guard",
+  "version": "1.0",
+  "description": "Screens prompts for injection attacks before sending to AI chatbots.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://copilot.microsoft.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://copilot.microsoft.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ]
+}
