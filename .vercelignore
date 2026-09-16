@@ -1,0 +1,12 @@
+venv/
+data/
+__pycache__/
+*.pyc
+.env
+.git/
+/scripts/
+/models/
+/extension/
+*.md
+cyber*
+Backup*

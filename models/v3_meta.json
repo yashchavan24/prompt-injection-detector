@@ -1,0 +1,14 @@
+{
+  "t_block": 0.8,
+  "t_flag": 0.78,
+  "n_train": 19187,
+  "n_features": 50039,
+  "val_auroc": 0.9979,
+  "test_auroc": 0.9985,
+  "test_verdict_acc": 0.9757,
+  "sources": {
+    "safeguard": 10296,
+    "jayavibhav": 6000,
+    "deepset": 662
+  }
+}

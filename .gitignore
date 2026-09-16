@@ -5,3 +5,6 @@ __pycache__/
 data/
 ui-preview/
 node_modules/
+.vercel
+server.log
+api/models/

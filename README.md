@@ -1,65 +1,110 @@
-﻿# Prompt Injection Detector
+# Prompt Injection Detector (v3)
 
-A machine learning-based system for detecting prompt injection attacks in LLM-integrated applications, built as a final year B.Tech Cyber Security project.
+A machine learning system for detecting prompt injection attacks in LLM-integrated applications, built as a final year B.Tech Cyber Security project.
 
-**Live demo:** https://prompt-injection-detector-g0v0.onrender.com
-(Free tier hosting -- first request may take up to 50 seconds if the instance has spun down from inactivity.)
+**Live demo:** https://prompt-injection-detector-nine.vercel.app
+(Detector UI at `/`, protected-chatbot demo at `/chat-page`, API docs at `/docs`.)
 
 ## Overview
 
-Large Language Models integrated into real applications (chatbots, coding assistants, browser agents) are vulnerable to prompt injection -- attacks where malicious input overrides the model's intended instructions. This project builds a lightweight middleware classifier that screens prompts before they reach an LLM, blocking or flagging likely injection attempts in real time.
+Large Language Models integrated into real applications (chatbots, coding assistants, browser agents) are vulnerable to prompt injection -- attacks where malicious input overrides the model's intended instructions. This project builds a lightweight middleware classifier that screens prompts **before** they reach an LLM, blocking or flagging likely injection attempts in real time.
 
-Unlike most published detectors, which report near-perfect accuracy on same-dataset evaluation, this project explicitly measures performance under **cross-dataset generalization** -- training on one set of attack patterns and testing on genuinely unseen ones -- to reflect real deployment conditions rather than dataset artifacts.
+The v3 detector is **model-agnostic**: the same shield sits in front of ChatGPT, Qwen, Llama, DeepSeek, or any OpenAI-compatible endpoint -- the protected chat demo lets you demonstrate this live.
 
-## Key results
+## Key results (v3)
 
 | Evaluation | Result |
 |---|---|
-| Same-dataset (random split, 2 sources mixed) | 99.4% AUROC |
-| Cross-dataset generalization (2 sources) | ~0.72 AUROC average |
-| 3-way cross-dataset generalization (3 sources) | 0.71-0.97 AUROC (highly source-dependent) |
-| Adversarial stress test -- obvious attacks | 100% (13/13) |
-| Adversarial stress test -- novel/paraphrased attacks (2-source model) | 62.5% (5/8) |
-| Adversarial stress test -- novel/paraphrased attacks (3-source model) | 87.5% (7/8) |
-
-Full methodology, literature review, and analysis are in the project report.
+| Held-out test verdict accuracy (3-way verdicts) | **97.6%** |
+| Held-out test AUROC | 0.9985 |
+| Curated adversarial set -- attacks flagged | **30/30 (100%)** |
+| Curated adversarial set -- benign allowed | **29/29 (100%)** |
+| Fresh edge-case sweep (novel phrasings) | ~94-100% |
+| Live API stress test (28 cases, local & deployed) | **100%** |
 
 ## Architecture
 
-- **Detection model (research/local):** Sentence embeddings (all-MiniLM-L6-v2) + hand-crafted heuristic features (imperative-word density, roleplay/override markers) -> Random Forest classifier
-- **Detection model (deployed/lightweight):** TF-IDF features + heuristic features -> Logistic Regression classifier (chosen for deployment to fit within free-tier memory limits)
-- **Backend:** FastAPI, with `/check` (score any text) and `/chat` (protected chatbot demo wired to Llama 3.1 via Groq's API) endpoints
-- **Frontend:** Vanilla HTML/CSS/JS, dark-themed UI showing verdict, probability, and triggered signals
-- **Browser extension:** Chrome extension (Manifest V3) with a popup checker and a floating "Check for injection" button injected into ChatGPT/Copilot pages
+```
+user prompt ──> [ v3 Detector ] ──ALLOW──> LLM (ChatGPT / Qwen / Llama / DeepSeek ...)
+                     │                        ^ system prompt + secrets stay protected
+                     ├──FLAG──> passed with warning banner (human in the loop)
+                     └──BLOCK──> request never reaches the model
+```
 
-## Datasets used
+**Detection pipeline (v3):**
+1. **Word TF-IDF** (unigrams + bigrams) -- phrasing-level signals.
+2. **Character TF-IDF** (2-5 grams) -- catches leetspeak, obfuscation, misspellings.
+3. **39 heuristic features** -- categorized attack lexicons (override, persona, system-prompt probes, exfiltration, encoding, false authority, urgency, delimiters), high-precision regexes, inverted-index fuzzy matching against canonical jailbreak phrases (rapidfuzz), and obfuscation detectors (zero-width chars, homoglyphs, letter-spelling).
+4. **Calibrated ensemble** -- LinearSVC (CalibratedClassifierCV) + LogisticRegression, features scaled.
+5. **Explainable guardrails** -- concept-question cap (questions *about* security topics are allowed), harmless-roleplay cap, advice-question cap, and a hard-attack floor (override+system combos, exfiltration, spelled-out attacks, guardrail-disable directives force FLAG/BLOCK).
+6. **Threshold tuning** -- BLOCK/FLAG thresholds chosen on validation to maximize 3-way verdict accuracy.
 
-- [deepset/prompt-injections](https://huggingface.co/datasets/deepset/prompt-injections)
-- [xTRam1/safe-guard-prompt-injection](https://huggingface.co/datasets/xTRam1/safe-guard-prompt-injection)
-- [jayavibhav/prompt-injection](https://huggingface.co/datasets/jayavibhav/prompt-injection) (sampled subset)
+Training data: ~17k labeled prompts from 3 public datasets (deepset prompt-injections, safeguard, jayavibhav) + 2.2k synthetic adversarial augmentations.
 
-## Repo structure
-app.py Full local app (embeddings-based model, requires torch)
-app_deploy.py Lightweight deployed app (TF-IDF-based model, no torch)
-requirements.txt Dependencies for the deployed (lite) version
-scripts/ Data pipeline, training, and evaluation scripts
-models/ Trained model artifacts (.pkl)
-static/ Web UI (detector page + protected chatbot demo)
-extension/ Chrome extension (Manifest V3)
+## Model-agnostic LLM providers
 
-## Running locally
+`/chat` auto-detects the configured provider from environment variables -- all speak the OpenAI chat protocol:
 
+| Provider | Env var | Default model |
+|---|---|---|
+| OpenAI / ChatGPT | `OPENAI_API_KEY` | gpt-4o-mini |
+| Qwen (DashScope) | `QWEN_API_KEY` | qwen-plus |
+| Groq (Llama / GPT-OSS) | `GROQ_API_KEY` | resolved dynamically |
+| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-chat |
+| OpenRouter | `OPENROUTER_API_KEY` | openrouter/auto |
+| Together AI | `TOGETHER_API_KEY` | Llama-3-8b |
+| Any OpenAI-compatible endpoint | `CUSTOM_LLM_URL` + `CUSTOM_LLM_KEY` | `CUSTOM_LLM_MODEL` |
+
+Groq note: model IDs rotate frequently, so the app resolves the best available chat model from the account's `/models` list at request time and falls back through a preference list if a model is rejected -- the demo never dead-ends mid-presentation.
+
+The deployed instance uses **Groq** (`GROQ_API_KEY` set as a Vercel env var) and currently serves `openai/gpt-oss-120b`. To demo with ChatGPT or Qwen instead, add their API key in the Vercel dashboard -- the detector is untouched, only the model behind it changes.
+
+## API
+
+| Endpoint | Description |
+|---|---|
+| `POST /check` | `{\"text\": ...}` -> verdict (ALLOW/FLAG/BLOCK), probability, thresholds, explainable signals |
+| `POST /batch-check` | Screen up to 100 texts at once |
+| `POST /chat` | Protected chat: screens the message, forwards to the configured LLM |
+| `GET /providers` | Which provider/model is active |
+| `GET /chat-page` | Protected chatbot demo UI |
+| `GET /` | Detector playground UI |
+
+## Chrome extension
+
+`extension/` contains a Manifest V3 extension that checks any prompt typed into ChatGPT, Claude, Gemini, Qwen (chat.qwen.ai), DeepSeek, Copilot, Mistral, or Grok before you send it -- floating button + auto-check on send, verdict banner with probability and signals. Load it via `chrome://extensions` -> Developer mode -> Load unpacked.
+
+## Local setup
+
+```bash
 python -m venv venv
-venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app_deploy:app --reload
+venv/Scripts/pip install -r requirements.txt      # Windows; linux: venv/bin/pip
+venv/Scripts/python scripts/unify_data.py          # build training data
+venv/Scripts/python scripts/train_v3.py            # train + evaluate + save artifacts
+venv/Scripts/python scripts/copy_models_to_api.py  # copy artifacts for Vercel
+venv/Scripts/python -m uvicorn app:app --port 8000
+venv/Scripts/python scripts/stress_test_v3.py      # 28-case live accuracy report
+```
 
-Then open http://127.0.0.1:8000
+`app.py` reads `.env` for provider keys locally; on Vercel use dashboard/CLI env vars.
 
-To use the full embeddings-based model instead, install `torch` and `sentence-transformers` additionally and run `uvicorn app:app --reload`.
+## Deployment (Vercel)
 
-## Limitations
+- `api/index.py` -- serverless entry exposing the FastAPI app.
+- `vercel.json` -- Python 3.12 runtime, model artifacts bundled via `includeFiles`.
+- Model artifacts (~4 MB total) are copied into `api/models/` by `scripts/copy_models_to_api.py` -- rerun it after retraining, then `vercel --prod`.
+- Required env var for the chat demo: `GROQ_API_KEY` (or any other provider key).
 
-- The detector is specifically trained to catch prompt injection / instruction-override patterns -- it is not a general content moderation filter (a directly harmful request that isn't an injection attempt may pass through, as demonstrated in testing).
-- Cross-dataset generalization remains an open challenge; performance varies significantly depending on which dataset combination is used for training vs. testing.
-- The lightweight deployed model (TF-IDF-based) has not been evaluated on the same cross-dataset/adversarial benchmarks as the full embeddings-based model.
+## Project layout
+
+```
+app.py                  FastAPI app (detector + protected chat + provider layer)
+detector.py             Shared featurization + guardrails (training & inference)
+scripts/train_v3.py     Training, augmentation, threshold tuning, evaluation
+scripts/stress_test_v3.py  Live 28-case accuracy report (local or deployed URL)
+api/index.py + vercel.json  Vercel serverless deployment
+static/                 Detector playground + protected chat UI
+extension/              Chrome extension for major AI chat sites
+models/                 Trained v3 artifacts (committed, ~4 MB)
+data/                   Training datasets (gitignored)
+```
