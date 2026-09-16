@@ -92,7 +92,7 @@ venv/Scripts/python scripts/stress_test_v3.py      # 28-case live accuracy repor
 
 - `api/index.py` -- serverless entry exposing the FastAPI app.
 - `vercel.json` -- Python 3.12 runtime, model artifacts bundled via `includeFiles`.
-- Model artifacts (~4 MB total) are copied into `api/models/` by `scripts/copy_models_to_api.py` -- rerun it after retraining, then `vercel --prod`.
+- Model artifacts (~4 MB total) live in `models/` and are committed to the repo, so both `vercel --prod` and the GitHub integration bundle them via `includeFiles`. After retraining, commit the new artifacts (or run `scripts/copy_models_to_api.py` for the legacy `api/models/` layout).
 - Required env var for the chat demo: `GROQ_API_KEY` (or any other provider key).
 
 ## Project layout
