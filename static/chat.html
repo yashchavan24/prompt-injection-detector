@@ -107,7 +107,7 @@
 <div class="container">
   <h1>Protected Chatbot Demo</h1>
   <p class="subtitle">Every message is screened by the v3 detector before it reaches the AI model. The model behind it is whatever provider you configure &mdash; ChatGPT, Qwen, Llama, DeepSeek &mdash; the shield works identically for all of them.</p>
-  <div class="nav"><a href="/">&larr; Detector</a></div>
+  <div class="nav"><a href="/">&larr; Detector</a> <a href="/dashboard">Live attack dashboard &rarr;</a></div>
   <div><span class="provider-badge none" id="providerBadge">Checking provider...</span></div>
 
   <div class="chat-window" id="chatWindow">
@@ -149,18 +149,23 @@ fetch("/providers").then(r => r.json()).then(d => {
   }
 }).catch(() => {});
 
-function addMessage(text, cls, meta, tag) {
+function addMessage(text, cls, meta, tag, highlight) {
   const win = document.getElementById("chatWindow");
   const div = document.createElement("div");
   div.className = "msg " + cls;
   if (tag) {
     const span = document.createElement("span");
-    span.className = tag === "BLOCKED" ? "blocked-tag" : "flagged-tag";
+    span.className = tag === "BLOCKED" || tag === "OUTPUT FIREWALL"
+      ? "blocked-tag" : "flagged-tag";
     span.textContent = tag;
     div.appendChild(span);
     div.appendChild(document.createElement("br"));
   }
-  div.appendChild(document.createTextNode(text));
+  if (highlight && highlight.length && cls === "user") {
+    div.innerHTML = highlightHTML(text, highlight);
+  } else {
+    div.appendChild(document.createTextNode(text));
+  }
   if (meta) {
     const metaDiv = document.createElement("div");
     metaDiv.className = "msg-meta";
@@ -169,12 +174,55 @@ function addMessage(text, cls, meta, tag) {
   }
   win.appendChild(div);
   win.scrollTop = win.scrollHeight;
+  return div;
+}
+
+const SESSION_ID = (() => {
+  let sid = sessionStorage.getItem("pig_session");
+  if (!sid) {
+    sid = "sess-" + Math.random().toString(36).slice(2, 10);
+    sessionStorage.setItem("pig_session", sid);
+  }
+  return sid;
+})();
+
+const HL_COLORS = {
+  override: "#f87171", persona: "#c084fc", system: "#60a5fa",
+  exfil: "#fb923c", encoding: "#2dd4bf", authority: "#fbbf24",
+  urgency: "#a3e635", delimiter: "#94a3b8", guardrail: "#f472b6",
+  fuzzy: "#f87171",
+};
+
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function highlightHTML(text, spans) {
+  if (!spans || !spans.length) return esc(text);
+  spans = [...spans].sort((a, b) => a.start - b.start);
+  let html = "", pos = 0;
+  for (const s of spans) {
+    if (s.start > pos) html += esc(text.slice(pos, s.start));
+    const color = HL_COLORS[s.category] || "#f87171";
+    html += '<span style="background:' + color + '22;color:' + color +
+      ';border-bottom:2px solid ' + color + ';padding:0 2px;border-radius:3px">' +
+      esc(text.slice(s.start, s.end)) + '</span>';
+    pos = s.end;
+  }
+  return html + esc(text.slice(pos));
+}
+
+function riskLabel(sr) {
+  if (!sr) return "";
+  if (sr.escalated) return " ⚠ escalated after repeated attempts";
+  if (sr.streak >= 2) return " (" + sr.streak + " recent flags in this session)";
+  return "";
 }
 
 async function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
-  addMessage(text, "user");
+  const userDiv = addMessage(text, "user");
   input.value = "";
   sendBtn.disabled = true;
 
@@ -182,15 +230,21 @@ async function sendMessage() {
     const res = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text })
+      body: JSON.stringify({ message: text, session_id: SESSION_ID })
     });
     const data = await res.json();
-    const pct = (data.injection_probability * 100).toFixed(1) + "% injection score";
+    const pct = (data.injection_probability * 100).toFixed(1) + "% injection score" +
+      riskLabel(data.session_risk);
+    if (data.highlight && data.highlight.length) {
+      userDiv.innerHTML = highlightHTML(text, data.highlight);
+    }
 
-    if (data.blocked) {
-      addMessage(data.reply, "blocked", pct, "BLOCKED");
+    if (data.blocked && data.verdict === "OUTPUT_BLOCK") {
+      addMessage(data.reply, "blocked", pct, "OUTPUT FIREWALL");
+    } else if (data.blocked) {
+      addMessage(data.reply, "blocked", pct, "BLOCKED", data.highlight);
     } else if (data.verdict === "FLAG") {
-      addMessage(data.note + "\n\n" + data.reply, "flagged", "Passed with warning (" + pct + ")", "FLAGGED");
+      addMessage(data.note + "\n\n" + data.reply, "flagged", pct, "FLAGGED", data.highlight);
     } else {
       addMessage(data.reply, "bot", "Passed filter (" + pct + ")");
     }

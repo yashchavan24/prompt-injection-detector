@@ -892,6 +892,89 @@ def apply_guardrails(prob: float, feats: list, text: str,
     return p
 
 
+def highlight_spans(text: str, signals: dict) -> list:
+    """Word-level evidence for the UI: character spans in the ORIGINAL text
+    that triggered the verdict, each tagged with the signal category.
+    Returns [{start, end, category}] sorted by start."""
+    spans = []
+    low = text.lower()
+
+    def add_all(patterns, category):
+        for pat in patterns:
+            for m in pat.finditer(text):
+                spans.append({"start": m.start(), "end": m.end(),
+                              "category": category})
+
+    if signals.get("override_pattern") or signals.get("lexicon_hits", {}).get("override"):
+        add_all(COMPILED_PATTERNS["override"], "override")
+    if signals.get("roleplay_jailbreak") or signals.get("lexicon_hits", {}).get("persona"):
+        add_all(COMPILED_PATTERNS["persona"], "persona")
+    if signals.get("system_prompt_probe") or signals.get("lexicon_hits", {}).get("system"):
+        add_all(COMPILED_PATTERNS["system"], "system")
+    if signals.get("exfiltration_attempt") or signals.get("lexicon_hits", {}).get("exfil"):
+        add_all(COMPILED_PATTERNS["exfil"], "exfil")
+    if signals.get("encoding_obfuscation") or signals.get("lexicon_hits", {}).get("encoding"):
+        add_all(COMPILED_PATTERNS["encoding"], "encoding")
+    if signals.get("false_authority_claim") or signals.get("lexicon_hits", {}).get("authority"):
+        add_all(COMPILED_PATTERNS["authority"], "authority")
+    if signals.get("urgency_pressure") or signals.get("lexicon_hits", {}).get("urgency"):
+        add_all(COMPILED_PATTERNS["urgency"], "urgency")
+    if signals.get("template_delimiters") or signals.get("lexicon_hits", {}).get("delimiter"):
+        add_all(COMPILED_PATTERNS["delimiter"], "delimiter")
+
+    # lexicon phrase matches for categories that fired (LEXICON_LOWER holds
+    # plain phrases like "system prompt" that the strong regexes don't cover)
+    lex = signals.get("lexicon_hits", {}) or {}
+    for cat, n in lex.items():
+        if not n or cat not in LEXICON_LOWER:
+            continue
+        for phrase in LEXICON_LOWER[cat]:
+            start = 0
+            while True:
+                idx = low.find(phrase, start)
+                if idx == -1:
+                    break
+                spans.append({"start": idx, "end": idx + len(phrase),
+                              "category": cat})
+                start = idx + len(phrase)
+
+    # guardrail-disable directive (attack_log "guardrail tampering" trigger)
+    if "guardrail" in low or "safety filter" in low or "content policy" in low:
+        m = GUARDRAIL_DISABLE_RE.search(text)
+        if m:
+            spans.append({"start": m.start(), "end": m.end(),
+                          "category": "guardrail"})
+
+    # fuzzy canonical phrase matches -- locate the actual matched text by
+    # sliding word windows over the ORIGINAL text (cheap for one-off calls)
+    tokens = list(re.finditer(r"\S+", text))
+    for w in (2, 3, 4, 6):
+        for i in range(0, max(len(tokens) - w + 1, 0)):
+            window_toks = tokens[i:i + w]
+            window = text[window_toks[0].start():window_toks[-1].end()]
+            for phrase in CANONICAL_ATTACK_PHRASES:
+                if HAVE_FUZZ:
+                    score = fuzz.ratio(phrase, window.lower())
+                else:
+                    score = _fuzzy_ratio(phrase, window.lower())
+                if score >= 88.0:
+                    spans.append({"start": window_toks[0].start(),
+                                  "end": window_toks[-1].end(),
+                                  "category": "fuzzy"})
+                    break
+
+    # merge overlaps (keep the longer span)
+    spans.sort(key=lambda s: (s["start"], -(s["end"] - s["start"])))
+    merged = []
+    for s in spans:
+        if merged and s["start"] < merged[-1]["end"]:
+            if s["end"] > merged[-1]["end"]:
+                merged[-1]["end"] = s["end"]
+            continue
+        merged.append(s)
+    return merged
+
+
 def explain_signals(feats: list) -> dict:
     """Human-readable signals for the UI, from a feature vector."""
     f = FEATURE_NAMES.index

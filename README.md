@@ -3,7 +3,7 @@
 A machine learning system for detecting prompt injection attacks in LLM-integrated applications, built as a final year B.Tech Cyber Security project.
 
 **Live demo:** https://prompt-injection-detector-nine.vercel.app
-(Detector UI at `/`, protected-chatbot demo at `/chat-page`, API docs at `/docs`.)
+(Detector UI at `/`, protected chatbot at `/chat-page`, live attack dashboard at `/dashboard`, API docs at `/docs`.)
 
 ## Overview
 
@@ -26,9 +26,14 @@ The v3 detector is **model-agnostic**: the same shield sits in front of ChatGPT,
 
 ```
 user prompt ──> [ v3 Detector ] ──ALLOW──> LLM (ChatGPT / Qwen / Llama / DeepSeek ...)
-                     │                        ^ system prompt + secrets stay protected
+                     │                        ^ system prompt + canary secret
                      ├──FLAG──> passed with warning banner (human in the loop)
                      └──BLOCK──> request never reaches the model
+
+LLM reply ───> [ Output Firewall + Canary scan ] ──clean──> user
+                     └── leak/injection detected ──> suppressed + alarm + log
+
+every FLAG/BLOCK/output-block ──> SQLite event store ──> /dashboard + PDF reports
 ```
 
 **Detection pipeline (v3):**
@@ -63,11 +68,14 @@ The deployed instance uses **Groq** (`GROQ_API_KEY` set as a Vercel env var) and
 
 | Endpoint | Description |
 |---|---|
-| `POST /check` | `{\"text\": ...}` -> verdict (ALLOW/FLAG/BLOCK), probability, thresholds, explainable signals |
+| `POST /check` | `{\"text\": ...}` -> verdict, probability, signals, word-level highlight spans |
 | `POST /batch-check` | Screen up to 100 texts at once |
-| `POST /chat` | Protected chat: screens the message, forwards to the configured LLM |
+| `POST /chat` | Protected chat: input screening -> LLM -> output firewall + canary scan; optional `session_id` for multi-turn tracking |
 | `GET /providers` | Which provider/model is active |
 | `GET /chat-page` | Protected chatbot demo UI |
+| `GET /dashboard` + `/api/dashboard` | Live attack dashboard UI + JSON stats/feed |
+| `GET /api/report/{daily\|weekly\|monthly}` | PDF security report (summary, taxonomy, mitigations, incidents) |
+| `GET /api/session/{id}` | Per-session verdict history |
 | `GET /` | Detector playground UI |
 
 ## Chrome extension
@@ -99,12 +107,16 @@ venv/Scripts/python scripts/stress_test_v3.py      # 28-case live accuracy repor
 
 ```
 app.py                  FastAPI app (detector + protected chat + provider layer)
-detector.py             Shared featurization + guardrails (training & inference)
+detector.py             Shared featurization + guardrails + highlight spans
+attack_log.py           SQLite event store: taxonomy, criticality, session risk
+report_generator.py     Periodic PDF security report (reportlab)
 scripts/train_v3.py     Training, augmentation, threshold tuning, evaluation
 scripts/stress_test_v3.py  Live 28-case accuracy report (local or deployed URL)
 api/index.py + vercel.json  Vercel serverless deployment
-static/                 Detector playground + protected chat UI
+static/                 Detector + chat + dashboard UIs
 extension/              Chrome extension for major AI chat sites
 models/                 Trained v3 artifacts (committed, ~4 MB)
-data/                   Training datasets (gitignored)
+data/                   Training datasets (gitignored; pig_events.db lives here locally)
 ```
+
+Note: on Vercel the event store lives on `/tmp` (ephemeral per warm container) -- events accumulate per instance and reset on cold starts; for a persistent store, point `PIG_DB_PATH` at a mounted volume or swap SQLite for a hosted DB in `attack_log.py`.

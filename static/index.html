@@ -127,6 +127,7 @@
   <div class="nav">
     <a href="/">Detector</a>
     <a href="/chat-page">Protected chatbot demo &rarr;</a>
+    <a href="/dashboard">Live attack dashboard &rarr;</a>
   </div>
 
   <div class="card">
@@ -149,6 +150,10 @@
       <span class="prob-text" id="probText"></span>
     </div>
     <div class="bar-track"><div class="bar-fill" id="barFill" style="width:0%"></div></div>
+    <div class="highlight-card" id="highlightCard" style="display:none">
+      <div style="font-size:12px;color:#8b8f9a;margin-bottom:8px">Trigger phrases (word-level evidence):</div>
+      <div id="highlightBox" style="font-size:14px;line-height:1.8;word-wrap:break-word"></div>
+    </div>
     <div class="threshold-row">
       <span id="threshInfo"></span>
     </div>
@@ -213,9 +218,40 @@ async function checkPrompt() {
   checkBtn.innerText = "Check prompt";
 }
 
+const HL_COLORS = {
+  override: "#f87171", persona: "#c084fc", system: "#60a5fa",
+  exfil: "#fb923c", encoding: "#2dd4bf", authority: "#fbbf24",
+  urgency: "#a3e635", delimiter: "#94a3b8", guardrail: "#f472b6",
+  fuzzy: "#f87171",
+};
+
+function renderHighlight(text, spans) {
+  const cardEl = document.getElementById("highlightCard");
+  const box = document.getElementById("highlightBox");
+  if (!spans || !spans.length) { cardEl.style.display = "none"; return; }
+  spans = [...spans].sort((a, b) => a.start - b.start);
+  let html = "", pos = 0;
+  for (const s of spans) {
+    if (s.start > pos) html += esc(text.slice(pos, s.start));
+    const color = HL_COLORS[s.category] || "#f87171";
+    html += '<span style="background:' + color + '22;color:' + color +
+      ';border-bottom:2px solid ' + color + ';padding:1px 2px;border-radius:3px">' +
+      esc(text.slice(s.start, s.end)) + '</span>';
+    pos = s.end;
+  }
+  html += esc(text.slice(pos));
+  box.innerHTML = html;
+  cardEl.style.display = "block";
+}
+
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function renderResult(data) {
   const card = document.getElementById("resultCard");
   card.classList.add("show");
+  renderHighlight(data.text || "", data.highlight);
 
   const badge = document.getElementById("verdictBadge");
   badge.innerText = data.verdict;

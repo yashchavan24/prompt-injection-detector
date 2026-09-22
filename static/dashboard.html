@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attack Dashboard &middot; Prompt Injection Detector</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    background: #0f1117; color: #e6e6e6; padding: 28px 20px 60px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .subtitle { color: #8b8f9a; font-size: 14px; margin-bottom: 18px; }
+  .nav { margin-bottom: 22px; font-size: 14px; }
+  .nav a { color: #4a7dff; text-decoration: none; margin-right: 16px; font-weight: 600; }
+  .nav a:hover { text-decoration: underline; }
+  .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+  .kpi {
+    flex: 1; min-width: 150px; background: #161922; border: 1px solid #262a35;
+    border-radius: 12px; padding: 16px 18px;
+  }
+  .kpi .num { font-size: 30px; font-weight: 700; }
+  .kpi .lbl { font-size: 12px; color: #8b8f9a; margin-top: 2px; }
+  .kpi.critical .num { color: #f87171; }
+  .kpi.block .num { color: #fb923c; }
+  .kpi.flag .num { color: #fbbf24; }
+  .kpi.canary .num { color: #f472b6; }
+  .card {
+    background: #161922; border: 1px solid #262a35; border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 14px; color: #d0d2d8; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin: 7px 0; font-size: 13px; }
+  .bar-label { width: 220px; color: #b7bac2; flex-shrink: 0; }
+  .bar-track { flex: 1; height: 14px; background: #0f1117; border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; }
+  .bar-count { width: 34px; text-align: right; font-weight: 700; }
+  .crit-CRITICAL { background: #dc2626; }
+  .crit-HIGH { background: #ea580c; }
+  .crit-MEDIUM { background: #ca8a04; }
+  .crit-LOW { background: #65a30d; }
+  .type-CRITICAL { color: #f87171; font-weight: 700; }
+  .type-HIGH { color: #fb923c; font-weight: 700; }
+  .type-MEDIUM { color: #fbbf24; font-weight: 700; }
+  .type-LOW { color: #a3e635; font-weight: 700; }
+  table.feed { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.feed th {
+    text-align: left; color: #8b8f9a; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.4px; padding: 6px 8px;
+    border-bottom: 1px solid #262a35;
+  }
+  table.feed td { padding: 8px; border-bottom: 1px solid #1d212c; vertical-align: top; }
+  table.feed tr:hover td { background: #1a1e2a; }
+  .pill {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 10px;
+    border-radius: 999px; letter-spacing: 0.4px;
+  }
+  .pill.BLOCK { background: #3a1414; color: #f87171; }
+  .pill.FLAG { background: #3a2f0e; color: #fbbf24; }
+  .pill.OUTPUT_BLOCK { background: #2a1030; color: #e879f9; }
+  .txt { color: #9ca3af; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .report-btns { display: flex; gap: 12px; flex-wrap: wrap; }
+  .rbtn {
+    background: #4a7dff; color: white; border: none; border-radius: 8px;
+    padding: 11px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .rbtn:hover { background: #3a6aef; }
+  .rbtn.secondary { background: #1d212c; border: 1px solid #2a2e3a; color: #b7bac2; }
+  .rbtn.secondary:hover { border-color: #4a7dff; color: #e6e6e6; }
+  .empty { color: #6b7280; font-size: 14px; padding: 18px 0; text-align: center; }
+  .day-grid { display: flex; align-items: flex-end; gap: 6px; height: 130px; padding-top: 10px; }
+  .day-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; height: 100%; }
+  .day-seg { width: 100%; border-radius: 3px 3px 0 0; }
+  .day-seg.BLOCK { background: #dc2626; }
+  .day-seg.FLAG { background: #ca8a04; }
+  .day-lbl { font-size: 9px; color: #6b7280; text-align: center; margin-top: 5px; transform: rotate(-45deg); }
+  .day-cols-wrap { display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Live Attack Dashboard</h1>
+  <p class="subtitle">Every FLAG / BLOCK from the detector, every output-firewall interception and canary alarm &mdash; logged, classified, and rated by criticality.</p>
+  <div class="nav">
+    <a href="/">Detector</a>
+    <a href="/chat-page">Protected chat</a>
+    <a href="/docs">API docs</a>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi critical"><div class="num" id="kpiTotal">-</div><div class="lbl">Security events (30d)</div></div>
+    <div class="kpi block"><div class="num" id="kpiBlocked">-</div><div class="lbl">Blocked before model</div></div>
+    <div class="kpi flag"><div class="num" id="kpiFlagged">-</div><div class="lbl">Flagged for review</div></div>
+    <div class="kpi canary"><div class="num" id="kpiCanary">-</div><div class="lbl">Canary alarms</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Security reports (PDF)</h2>
+    <div class="report-btns">
+      <button class="rbtn" onclick="dl('daily')">Download daily report</button>
+      <button class="rbtn" onclick="dl('weekly')">Download weekly report</button>
+      <button class="rbtn" onclick="dl('monthly')">Download monthly report</button>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Events by criticality</h2>
+      <div id="critChart"></div>
+    </div>
+    <div class="card">
+      <h2>Attack types detected</h2>
+      <div id="typeChart"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Daily timeline (last 14 days)</h2>
+    <div id="dayChart"></div>
+  </div>
+
+  <div class="card">
+    <h2>Recent events (live feed)</h2>
+    <table class="feed">
+      <thead><tr><th>Time (UTC)</th><th>Verdict</th><th>Type</th><th>Criticality</th><th>Score</th><th>Prompt / response</th></tr></thead>
+      <tbody id="feedBody"></tbody>
+    </table>
+    <div class="empty" id="feedEmpty" style="display:none">No events logged yet &mdash; go block some attacks in the <a href="/" style="color:#4a7dff">detector</a> or <a href="/chat-page" style="color:#4a7dff">chat demo</a>.</div>
+  </div>
+</div>
+
+<script>
+const TYPE_LABELS = {
+  data_exfiltration: "Data Exfiltration",
+  guardrail_tampering: "Guardrail Tampering",
+  system_prompt_extraction: "System Prompt Extraction",
+  instruction_override: "Instruction Override",
+  obfuscated_attack: "Obfuscated / Encoded Attack",
+  roleplay_jailbreak: "Roleplay / Persona Jailbreak",
+  template_injection: "Template / Delimiter Injection",
+  authority_impersonation: "False Authority Claim",
+  social_engineering: "Social Engineering / Pressure",
+  system_prompt_leak: "System Prompt Leak (output)",
+  response_anomaly: "Suspicious Model Response",
+  multi_turn_escalation: "Multi-turn Escalation",
+};
+
+async function load() {
+  const d = await (await fetch("/api/dashboard?days=30")).json();
+  const s = d.stats;
+  document.getElementById("kpiTotal").innerText = s.total_events;
+  document.getElementById("kpiBlocked").innerText =
+    (s.by_verdict.BLOCK || 0);
+  document.getElementById("kpiFlagged").innerText = (s.by_verdict.FLAG || 0);
+  document.getElementById("kpiCanary").innerText = s.canary_hits;
+
+  const critOrder = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+  const critMax = Math.max(1, ...critOrder.map(c => s.by_criticality[c] || 0));
+  document.getElementById("critChart").innerHTML = critOrder.map(c => {
+    const n = s.by_criticality[c] || 0;
+    return '<div class="bar-row"><div class="bar-label">' + c + '</div>' +
+      '<div class="bar-track"><div class="bar-fill crit-' + c + '" style="width:' +
+      (n / critMax * 100) + '%"></div></div><div class="bar-count">' + n + '</div></div>';
+  }).join("");
+
+  const types = Object.entries(s.by_type).sort((a, b) => b[1] - a[1]);
+  const tMax = Math.max(1, ...types.map(t => t[1]));
+  document.getElementById("typeChart").innerHTML = types.length ? types.map(([k, n]) => {
+    const tax = d.taxonomy[k] || {};
+    const crit = tax.criticality || "LOW";
+    return '<div class="bar-row"><div class="bar-label type-' + crit + '" title="' +
+      (tax.description || "") + '">' + (TYPE_LABELS[k] || k) + '</div>' +
+      '<div class="bar-track"><div class="bar-fill crit-' + crit + '" style="width:' +
+      (n / tMax * 100) + '%"></div></div><div class="bar-count">' + n + '</div></div>';
+  }).join("") : '<div class="empty">No attacks recorded yet.</div>';
+
+  const days = Object.entries(s.by_day).slice(-14);
+  const dMax = Math.max(1, ...days.flatMap(([, v]) => [v.BLOCK || 0, v.FLAG || 0]));
+  document.getElementById("dayChart").innerHTML = days.length
+    ? '<div class="day-cols-wrap">' + days.map(([day, v]) => {
+        const b = v.BLOCK || 0, f = v.FLAG || 0;
+        return '<div class="day-col" style="width:40px">' +
+          (b ? '<div class="day-seg BLOCK" style="height:' + (b / dMax * 100) + '%" title="BLOCK: ' + b + '"></div>' : '') +
+          (f ? '<div class="day-seg FLAG" style="height:' + (f / dMax * 100) + '%" title="FLAG: ' + f + '"></div>' : '') +
+          '</div>';
+      }).join("") + '</div><div class="day-cols-wrap">' +
+      days.map(([day]) => '<div class="day-lbl" style="width:40px">' + day.slice(5) + '</div>').join("") + '</div>'
+    : '<div class="empty">No events in the last 14 days.</div>';
+
+  const feed = document.getElementById("feedBody");
+  feed.innerHTML = d.recent.length ? d.recent.map(e => {
+    const t = (e.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    return '<tr><td>' + e.time + '</td>' +
+      '<td><span class="pill ' + e.verdict + '">' + e.verdict + '</span></td>' +
+      '<td class="type-' + (e.criticality || "LOW") + '">' + (TYPE_LABELS[e.attack_type] || e.attack_type || "-") + '</td>' +
+      '<td class="type-' + (e.criticality || "LOW") + '">' + (e.criticality || "-") + '</td>' +
+      '<td>' + (e.probability).toFixed(2) + '</td>' +
+      '<td class="txt" title="' + t.replace(/"/g, "&quot;") + '">' + t + '</td></tr>';
+  }).join("") : "";
+  document.getElementById("feedEmpty").style.display =
+    d.recent.length ? "none" : "block";
+}
+
+function dl(period) {
+  window.open("/api/report/" + period, "_blank");
+}
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
