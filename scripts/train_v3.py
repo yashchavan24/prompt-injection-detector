@@ -30,7 +30,10 @@ from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from detector import extract_features, apply_guardrails  # noqa: E402
+from jailbreak_data import (generate_attack_rows,  # noqa: E402
+                            generate_benign_rows)
 
 random.seed(42)
 
@@ -173,6 +176,18 @@ def main():
             [df, pd.DataFrame(aug_rows, columns=["text", "label"])],
             ignore_index=True,
         )
+
+    # family augmentation: paraphrased + obfuscated real jailbreak families
+    # (red-team misses) plus benign hard-negatives with the same vocabulary,
+    # so the model -- not only the regex guardrails -- learns the boundary.
+    fam_rows = generate_attack_rows() + generate_benign_rows()
+    n_atk = sum(1 for _, l in fam_rows if l == 1)
+    n_ben = len(fam_rows) - n_atk
+    print(f"Family augmentation: {n_atk} attack + {n_ben} benign rows")
+    df = pd.concat(
+        [df, pd.DataFrame(fam_rows, columns=["text", "label"])],
+        ignore_index=True,
+    )
     df = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
 
     texts = df["text"].tolist()
