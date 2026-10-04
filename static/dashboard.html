@@ -16,6 +16,15 @@
   .nav { margin-bottom: 22px; font-size: 14px; }
   .nav a { color: #4a7dff; text-decoration: none; margin-right: 16px; font-weight: 600; }
   .nav a:hover { text-decoration: underline; }
+  .userbar {
+    display: flex; align-items: center; gap: 10px; margin: 0 0 18px;
+    background: #161922; border: 1px solid #262a35; border-radius: 12px;
+    padding: 12px 16px; font-size: 14px;
+  }
+  .userbar .who { font-weight: 700; }
+  .userbar .scope { color: #8b8f9a; }
+  .userbar a { color: #4a7dff; text-decoration: none; font-weight: 600; margin-left: auto; }
+  .userbar a:hover { text-decoration: underline; }
   .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
   .kpi {
     flex: 1; min-width: 150px; background: #161922; border: 1px solid #262a35;
@@ -89,6 +98,13 @@
     <a href="/">Detector</a>
     <a href="/chat-page">Protected chat</a>
     <a href="/docs">API docs</a>
+  </div>
+
+  <div class="userbar" id="userbar" style="display:none">
+    <span>👤</span>
+    <span class="who" id="userName"></span>
+    <span class="scope" id="userScope"></span>
+    <a href="#" onclick="logout()">Sign out</a>
   </div>
 
   <div class="kpi-row">
@@ -203,6 +219,19 @@ async function load() {
   }).join("") : "";
   document.getElementById("feedEmpty").style.display =
     d.recent.length ? "none" : "block";
+
+  const bar = document.getElementById("userbar");
+  if (d.user) {
+    bar.style.display = "flex";
+    document.getElementById("userName").innerText = d.user.name;
+    document.getElementById("userScope").innerText =
+      "— showing " + d.user.email + "'s saved events; reports cover this account only";
+  }
+}
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  location.reload();
 }
 
 function dl(period) {

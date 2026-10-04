@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create account &middot; Prompt Injection Detector</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center;
+    justify-content: center; padding: 24px;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    background: #0f1117; color: #e6e6e6;
+  }
+  .card {
+    width: 100%; max-width: 400px; background: #161922;
+    border: 1px solid #262a35; border-radius: 14px; padding: 30px 28px;
+  }
+  h1 { font-size: 21px; margin: 0 0 6px; }
+  .sub { color: #8b8f9a; font-size: 13.5px; margin: 0 0 22px; line-height: 1.5; }
+  label { display: block; font-size: 12.5px; color: #b7bac2; margin: 14px 0 6px; font-weight: 600; }
+  input {
+    width: 100%; padding: 11px 12px; border-radius: 9px; font-size: 14px;
+    border: 1px solid #2c313d; background: #0f1117; color: #e6e6e6;
+  }
+  input:focus { outline: none; border-color: #4a7dff; }
+  button {
+    width: 100%; margin-top: 20px; padding: 12px; border: 0; border-radius: 9px;
+    background: #4a7dff; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button:hover { background: #3b6ae8; }
+  button:disabled { opacity: .6; cursor: default; }
+  .err {
+    display: none; margin-top: 14px; padding: 10px 12px; border-radius: 8px;
+    background: #3a1a1e; border: 1px solid #7f1d1d; color: #fca5a5; font-size: 13px;
+  }
+  .foot { margin-top: 18px; font-size: 13px; color: #8b8f9a; text-align: center; }
+  .foot a { color: #4a7dff; text-decoration: none; font-weight: 600; }
+  .foot a:hover { text-decoration: underline; }
+  .home { display: block; text-align: center; margin-top: 8px; font-size: 12.5px; color: #6b7080; text-decoration: none; }
+  .home:hover { color: #9ba1ad; }
+  .shield { text-align: center; font-size: 30px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+  <form class="card" id="form">
+    <div class="shield">🛡️</div>
+    <h1>Create your account</h1>
+    <p class="sub">Every check, chat and report gets saved under your account
+      so your security history and PDF reports never get lost.</p>
+
+    <label for="name">Name (optional)</label>
+    <input id="name" type="text" autocomplete="name" placeholder="Yash Chavan">
+
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" required placeholder="you@example.com">
+
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="new-password" minlength="8" required placeholder="at least 8 characters">
+    <div class="foot" style="margin-top:8px;text-align:left">Use 8+ characters. Stored as a salted PBKDF2 hash — never in plain text.</div>
+
+    <button id="btn" type="submit">Create account</button>
+    <div class="err" id="err"></div>
+
+    <div class="foot">Already registered? <a href="/login">Sign in</a></div>
+    <a class="home" href="/">&larr; Back to the detector</a>
+  </form>
+
+<script>
+const form = document.getElementById('form');
+const err = document.getElementById('err');
+const btn = document.getElementById('btn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  err.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const r = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Sign-up failed');
+    location.href = '/dashboard';
+  } catch (ex) {
+    err.textContent = ex.message; err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Create account';
+  }
+});
+</script>
+</body>
+</html>

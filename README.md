@@ -103,13 +103,30 @@ venv/Scripts/python scripts/stress_test_v3.py      # 28-case live accuracy repor
 - Model artifacts (~4 MB total) live in `models/` and are committed to the repo, so both `vercel --prod` and the GitHub integration bundle them via `includeFiles`. After retraining, commit the new artifacts (or run `scripts/copy_models_to_api.py` for the legacy `api/models/` layout).
 - Required env var for the chat demo: `GROQ_API_KEY` (or any other provider key).
 
+## Accounts, per-user history & reports
+
+Every person can create an account, and their detection history, dashboard and PDF reports are saved **per user** so nothing gets lost:
+
+- `/signup` and `/login` pages (session-cookie auth; passwords stored as salted PBKDF2-SHA256 hashes, 200k iterations).
+- `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`, `/api/me`.
+- Signed-in users get their own dashboard (`/dashboard`) and their own daily/weekly/monthly PDF reports; anonymous visitors still see the global (all-traffic) view, exactly as before.
+- Event store is dual-backend: **Neon/Postgres** when `DATABASE_URL` is set (persistent across cold starts), SQLite locally otherwise.
+
+Env vars:
+
+```
+DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require   # Neon pooled connection
+AUTH_SECRET=<random hex>                                                      # set on Vercel so sessions survive cold starts
+```
+
 ## Project layout
 
 ```
-app.py                  FastAPI app (detector + protected chat + provider layer)
+app.py                  FastAPI app (detector + protected chat + provider layer + auth)
 detector.py             Shared featurization + guardrails + highlight spans
-attack_log.py           SQLite event store: taxonomy, criticality, session risk
-report_generator.py     Periodic PDF security report (reportlab)
+attack_log.py           Event store (SQLite local / Neon Postgres on Vercel): taxonomy, criticality, session risk, per-user scope
+auth.py                 Accounts (PBKDF2) + HMAC-signed session cookies
+report_generator.py     Periodic PDF security report (reportlab), per-account scope
 scripts/train_v3.py     Training, augmentation, threshold tuning, evaluation
 scripts/stress_test_v3.py  Live 28-case accuracy report (local or deployed URL)
 api/index.py + vercel.json  Vercel serverless deployment
@@ -119,4 +136,4 @@ models/                 Trained v3 artifacts (committed, ~4 MB)
 data/                   Training datasets (gitignored; pig_events.db lives here locally)
 ```
 
-Note: on Vercel the event store lives on `/tmp` (ephemeral per warm container) -- events accumulate per instance and reset on cold starts; for a persistent store, point `PIG_DB_PATH` at a mounted volume or swap SQLite for a hosted DB in `attack_log.py`.
+Note: on Vercel with the default SQLite backend the event store lives on `/tmp` (ephemeral per warm container). Set `DATABASE_URL` (Neon/Postgres) for a persistent store that also powers per-user accounts and reports.

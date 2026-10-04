@@ -44,12 +44,13 @@ def _styles():
     }
 
 
-def build_report(period="weekly") -> tuple:
+def build_report(period="weekly", user_id=None, owner_label=None) -> tuple:
     """Render the PDF for 'daily' | 'weekly' | 'monthly'.
+    When user_id is given, only that account's events are included.
     Returns (pdf_bytes, period_label, stats_dict)."""
     since, label, start_dt = attack_log.period_range(period)
-    events = attack_log.get_events(limit=500, since=since)
-    stats = attack_log.get_stats(days=30)
+    events = attack_log.get_events(limit=500, since=since, user_id=user_id)
+    stats = attack_log.get_stats(days=30, user_id=user_id)
     total = len(events)
     blocked = sum(1 for e in events if e["verdict"] == "BLOCK")
     flagged = sum(1 for e in events if e["verdict"] == "FLAG")
@@ -76,6 +77,14 @@ def build_report(period="weekly") -> tuple:
     story.append(Paragraph(
         f"{label} Security Report &middot; {start_dt:%d %b %Y} &ndash; "
         f"{now:%d %b %Y %H:%M} UTC", S["sub"]))
+    if owner_label:
+        story.append(Paragraph(
+            "Prepared for: <b>%s</b> (signed-in account scope only)"
+            % owner_label.replace("&", "&amp;").replace("<", "&lt;"),
+            S["sub"]))
+    else:
+        story.append(Paragraph(
+            "Prepared for: all traffic (no account signed in)", S["sub"]))
     story.append(Spacer(1, 6))
     story.append(HRFlowable(width="100%", thickness=1,
                             color=colors.HexColor("#4a7dff")))
@@ -233,7 +242,8 @@ def build_report(period="weekly") -> tuple:
     story.append(Paragraph(
         "Generated automatically by the Prompt Injection Detector v3 "
         "(input screening + output firewall + canary tokens + session risk "
-        "tracking). For questions contact the project security team.",
+        "tracking, per-account scope). For questions contact the project "
+        "security team.",
         S["sub"]))
 
     doc.build(story)

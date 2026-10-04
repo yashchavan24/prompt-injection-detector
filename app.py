@@ -36,12 +36,13 @@ import time
 import uuid
 
 import requests
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 import attack_log
+import auth
 import report_generator
 from detector import (apply_guardrails, explain_signals, extract_features,
                       highlight_spans, FEATURE_NAMES)
@@ -216,6 +217,29 @@ FLAG_NOTE = ("\u26a0\ufe0f Flagged as suspicious (passed to the model with a "
              "warning). Injection score: {score:.0f}%")
 
 
+# ------------------------------------------------------------- user accounts
+SESSION_COOKIE = "pig_session"
+
+
+def current_user(request: Request):
+    """Resolve the signed-in account from the session cookie (or None)."""
+    return auth.get_user(
+        auth.read_session_cookie(request.cookies.get(SESSION_COOKIE) or ""))
+
+
+def _set_session(response: JSONResponse, user: dict):
+    response.set_cookie(
+        SESSION_COOKIE, auth.make_session_cookie(user["id"]),
+        max_age=auth.SESSION_DAYS * 86400, httponly=True, samesite="lax",
+        secure=bool(os.getenv("VERCEL")))  # https-only on Vercel
+    return response
+
+
+def _user_id_of(request: Request):
+    user = current_user(request)
+    return (user or {}).get("id")
+
+
 class PromptRequest(BaseModel):
     text: str
 
@@ -229,11 +253,57 @@ class ChatRequest(BaseModel):
     session_id: str = "anon"
 
 
+class AuthRequest(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+
+
+@app.get("/login")
+def login_page():
+    return FileResponse(os.path.join(_static_dir, "login.html"))
+
+
+@app.get("/signup")
+def signup_page():
+    return FileResponse(os.path.join(_static_dir, "signup.html"))
+
+
+@app.post("/api/auth/signup")
+def auth_signup(req: AuthRequest):
+    user, err = auth.create_user(req.email, req.password, req.name)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return _set_session(JSONResponse({"user": user}, status_code=201), user)
+
+
+@app.post("/api/auth/login")
+def auth_login(req: AuthRequest):
+    user = auth.verify_user(req.email, req.password)
+    if not user:
+        return JSONResponse({"error": "Wrong email or password."},
+                            status_code=401)
+    return _set_session(JSONResponse({"user": user}), user)
+
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp
+
+
+@app.get("/api/me")
+def auth_me(request: Request):
+    return {"user": current_user(request)}
+
+
 @app.post("/check")
-def check_prompt(req: PromptRequest):
+def check_prompt(req: PromptRequest, request: Request):
     prob, raw, verdict, signals = score_text(req.text)
     if verdict in ("BLOCK", "FLAG"):
-        attack_log.log_event(verdict, prob, req.text, signals, source="input")
+        attack_log.log_event(verdict, prob, req.text, signals, source="input",
+                             user_id=_user_id_of(request))
     return {
         "text": req.text,
         "injection_probability": round(prob, 3),
@@ -280,7 +350,8 @@ def providers():
 
 
 @app.post("/chat")
-def protected_chat(req: ChatRequest):
+def protected_chat(req: ChatRequest, request: Request):
+    owner_id = _user_id_of(request)
     prob, raw, verdict, signals = score_text(req.message)
     provider = get_provider()
     session_id = (req.session_id or "anon")[:64]
@@ -300,7 +371,7 @@ def protected_chat(req: ChatRequest):
         attack_log.log_event(
             "BLOCK", prob, req.message, signals, source="input",
             attack_type=("multi_turn_escalation" if escalated else None),
-            session_id=session_id)
+            session_id=session_id, user_id=owner_id)
         return {
             "blocked": True,
             "verdict": verdict,
@@ -314,7 +385,8 @@ def protected_chat(req: ChatRequest):
 
     if verdict == "FLAG":
         attack_log.log_event("FLAG", prob, req.message, signals,
-                             source="input", session_id=session_id)
+                             source="input", session_id=session_id,
+                             user_id=owner_id)
 
     if not provider:
         return {
@@ -397,7 +469,7 @@ def protected_chat(req: ChatRequest):
         attack_log.log_event(
             "OUTPUT_BLOCK", 1.0, reply_text, {"canary": True}, source="output",
             attack_type="system_prompt_leak", canary=True,
-            session_id=session_id)
+            session_id=session_id, user_id=owner_id)
         return {
             "blocked": True,
             "verdict": "OUTPUT_BLOCK",
@@ -418,7 +490,8 @@ def protected_chat(req: ChatRequest):
     if out_verdict != "ALLOW":
         attack_log.log_event(
             "OUTPUT_BLOCK", out_prob, reply_text, out_signals, source="output",
-            attack_type="response_anomaly", session_id=session_id)
+            attack_type="response_anomaly", session_id=session_id,
+            user_id=owner_id)
         return {
             "blocked": True,
             "verdict": "OUTPUT_BLOCK",
@@ -455,11 +528,14 @@ def dashboard_page():
 
 
 @app.get("/api/dashboard")
-def dashboard_data(days: int = Query(default=14, ge=1, le=90)):
+def dashboard_data(request: Request, days: int = Query(default=14, ge=1, le=90)):
+    user = current_user(request)
+    uid = (user or {}).get("id")
     return {
-        "stats": attack_log.get_stats(days=days),
+        "user": user,
+        "stats": attack_log.get_stats(days=days, user_id=uid),
         "taxonomy": attack_log.taxonomy(),
-        "recent": attack_log.get_events(limit=60),
+        "recent": attack_log.get_events(limit=60, user_id=uid),
     }
 
 
@@ -470,11 +546,15 @@ def session_data(session_id: str):
 
 
 @app.get("/api/report/{period}")
-def report_pdf(period: str):
+def report_pdf(period: str, request: Request):
     if period not in ("daily", "weekly", "monthly"):
         return Response(JSON_ERROR, status_code=400,
                         media_type="application/json")
-    pdf, label, summary = report_generator.build_report(period)
+    user = current_user(request)
+    uid = (user or {}).get("id")
+    owner = f'{user["name"]} <{user["email"]}>' if user else None
+    pdf, label, summary = report_generator.build_report(
+        period, user_id=uid, owner_label=owner)
     stamp = time.strftime("%Y%m%d")
     return Response(
         pdf, media_type="application/pdf",

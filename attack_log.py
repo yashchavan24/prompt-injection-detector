@@ -25,7 +25,20 @@ _DB_PATH = os.getenv("PIG_DB_PATH") or (
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pig_events.db")
 )
 
-# ---------------------------------------------------------------- schema
+# ------------------------------------------------------------------ backend
+# Optional serverless Postgres (e.g. Neon): set DATABASE_URL to the pooled
+# connection string. When it is absent, everything transparently falls back
+# to the SQLite store below (local: data/pig_events.db, Vercel: /tmp).
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+USING_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+
+if USING_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+
+_pg_local = threading.local()
+
+
 def _connect():
     os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
     conn = sqlite3.connect(_DB_PATH, timeout=5)
@@ -33,27 +46,118 @@ def _connect():
     return conn
 
 
-def _init():
+def _pg():
+    """Thread-local Postgres connection with a cheap liveness check."""
+    conn = getattr(_pg_local, "conn", None)
+    if conn is not None:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return conn
+        except Exception:  # noqa: BLE001 -- stale connection, reconnect
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+            conn = None
+    url = DATABASE_URL
+    if "sslmode=" not in url:
+        url += ("&" if "?" in url else "?") + "sslmode=require"
+    _pg_local.conn = psycopg2.connect(url)
+    return _pg_local.conn
+
+
+def _pg_sql(sql: str) -> str:
+    """SQLite '?' placeholders -> psycopg2 '%s' placeholders."""
+    return sql.replace("?", "%s")
+
+
+def db_query(sql, params=(), one=False):
+    """Run a SELECT on whichever backend is active; returns list[dict]."""
+    if USING_POSTGRES:
+        conn = _pg()
+        with conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(_pg_sql(sql), tuple(params))
+                rows = cur.fetchall()
+    else:
+        with _connect() as conn:
+            rows = [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+    return (rows[0] if rows else None) if one else rows
+
+
+def db_execute(sql, params=(), returning=False):
+    """Run an INSERT/UPDATE/DDL. returning=True -> inserted row id."""
+    if USING_POSTGRES:
+        conn = _pg()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(_pg_sql(sql) + (" RETURNING id" if returning else ""),
+                            tuple(params))
+                row = cur.fetchone() if returning else None
+        return row[0] if row else None
     with _LOCK, _connect() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts REAL NOT NULL,
-                verdict TEXT NOT NULL,
-                probability REAL NOT NULL,
-                attack_type TEXT,
-                criticality TEXT,
-                source TEXT DEFAULT 'input',
-                canary INTEGER DEFAULT 0,
-                session_id TEXT DEFAULT 'anon',
-                text TEXT,
-                signals TEXT
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts)")
+        cur = conn.execute(sql, tuple(params))
+        return cur.lastrowid if returning else None
+
+
+# ------------------------------------------------------------------- schema
+_EVENTS_DDL_SQLITE = """
+    CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL NOT NULL,
+        verdict TEXT NOT NULL,
+        probability REAL NOT NULL,
+        attack_type TEXT,
+        criticality TEXT,
+        source TEXT DEFAULT 'input',
+        canary INTEGER DEFAULT 0,
+        session_id TEXT DEFAULT 'anon',
+        user_id TEXT,
+        text TEXT,
+        signals TEXT
+    )
+"""
+
+_EVENTS_DDL_PG = """
+    CREATE TABLE IF NOT EXISTS events (
+        id BIGSERIAL PRIMARY KEY,
+        ts DOUBLE PRECISION NOT NULL,
+        verdict TEXT NOT NULL,
+        probability REAL NOT NULL,
+        attack_type TEXT,
+        criticality TEXT,
+        source TEXT DEFAULT 'input',
+        canary INTEGER DEFAULT 0,
+        session_id TEXT DEFAULT 'anon',
+        user_id TEXT,
+        text TEXT,
+        signals TEXT
+    )
+"""
+
+_INDEX_DDL = (
+    "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)",
+    "CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts)",
+    "CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id, ts)",
+)
+
+
+def _init():
+    if USING_POSTGRES:
+        with _pg() as conn, conn.cursor() as cur:
+            cur.execute(_EVENTS_DDL_PG)
+            for ix in _INDEX_DDL:
+                cur.execute(ix)
+        return
+    with _LOCK, _connect() as conn:
+        conn.execute(_EVENTS_DDL_SQLITE)
+        try:  # legacy local stores predate per-user attribution
+            conn.execute("ALTER TABLE events ADD COLUMN user_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        for ix in _INDEX_DDL:
+            conn.execute(ix)
 
 
 _init()
@@ -233,29 +337,29 @@ def taxonomy():
 # ---------------------------------------------------------------- logging
 def log_event(verdict, probability, text, signals, source="input",
               attack_type=None, criticality=None, canary=False,
-              session_id="anon"):
+              session_id="anon", user_id=None):
     """Insert one detection event. Returns the row id (or None on failure --
-    logging must never break the API)."""
+    logging must never break the API). user_id ties the event to an account
+    when one is signed in (see auth.py); anonymous events stay global."""
     if attack_type is None:
         attack_type, tax = classify_attack(signals, text)
         criticality = tax["criticality"]
     try:
-        with _LOCK, _connect() as conn:
-            cur = conn.execute(
-                "INSERT INTO events (ts, verdict, probability, attack_type,"
-                " criticality, source, canary, session_id, text, signals)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (time.time(), verdict, float(probability),
-                 attack_type, criticality, source, int(bool(canary)),
-                 session_id or "anon", (text or "")[:500],
-                 json.dumps(signals or {})))
-            return cur.lastrowid
+        return db_execute(
+            "INSERT INTO events (ts, verdict, probability, attack_type,"
+            " criticality, source, canary, session_id, user_id, text, signals)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (time.time(), verdict, float(probability),
+             attack_type, criticality, source, int(bool(canary)),
+             session_id or "anon", user_id, (text or "")[:500],
+             json.dumps(signals or {})),
+            returning=True)
     except Exception:  # noqa: BLE001
         return None
 
 
 # ---------------------------------------------------------------- queries
-def get_events(limit=50, verdict=None, source=None, since=None):
+def get_events(limit=50, verdict=None, source=None, since=None, user_id=None):
     q = "SELECT * FROM events WHERE 1=1"
     args = []
     if verdict:
@@ -267,13 +371,13 @@ def get_events(limit=50, verdict=None, source=None, since=None):
     if since:
         q += " AND ts >= ?"
         args.append(since)
+    if user_id:
+        q += " AND user_id = ?"
+        args.append(user_id)
     q += " ORDER BY ts DESC LIMIT ?"
     args.append(min(int(limit), 500))
-    with _connect() as conn:
-        rows = conn.execute(q, args).fetchall()
     out = []
-    for r in rows:
-        d = dict(r)
+    for d in db_query(q, args):
         d["signals"] = json.loads(d.get("signals") or "{}")
         d["time"] = datetime.fromtimestamp(d["ts"], tz=timezone.utc)\
             .strftime("%Y-%m-%d %H:%M:%S")
@@ -281,12 +385,15 @@ def get_events(limit=50, verdict=None, source=None, since=None):
     return out
 
 
-def get_stats(days=14):
+def get_stats(days=14, user_id=None):
     since = time.time() - days * 86400
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT verdict, attack_type, criticality, source, canary, ts"
-            " FROM events WHERE ts >= ?", (since,)).fetchall()
+    q = ("SELECT verdict, attack_type, criticality, source, canary, ts"
+         " FROM events WHERE ts >= ?")
+    args = [since]
+    if user_id:
+        q += " AND user_id = ?"
+        args.append(user_id)
+    rows = db_query(q, args)
     by_day, by_type, by_crit, by_verdict = {}, {}, {}, {}
     canary_hits = 0
     for r in rows:
@@ -317,10 +424,9 @@ def flag_streak(session_id):
     """Consecutive recent FLAG/BLOCK verdicts for a session (newest first)."""
     if not session_id:
         return 0
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT verdict FROM events WHERE session_id = ? AND source='input'"
-            " ORDER BY ts DESC LIMIT 5", (session_id,)).fetchall()
+    rows = db_query(
+        "SELECT verdict FROM events WHERE session_id = ? AND source='input'"
+        " ORDER BY ts DESC LIMIT 5", (session_id,))
     streak = 0
     for r in rows:
         if r["verdict"] in ("FLAG", "BLOCK"):
@@ -331,17 +437,15 @@ def flag_streak(session_id):
 
 
 def session_history(session_id, limit=20):
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT ts, verdict, probability FROM events WHERE session_id = ?"
-            " ORDER BY ts ASC LIMIT ?", (session_id or "anon", limit)).fetchall()
+    rows = db_query(
+        "SELECT ts, verdict, probability FROM events WHERE session_id = ?"
+        " ORDER BY ts ASC LIMIT ?", (session_id or "anon", limit))
     return [{"verdict": r["verdict"], "probability": r["probability"]}
             for r in rows]
 
 
 def count_all():
-    with _connect() as conn:
-        return conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"]
+    return db_query("SELECT COUNT(*) AS c FROM events", one=True)["c"]
 
 
 def period_range(period):
