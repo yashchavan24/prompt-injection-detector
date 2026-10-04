@@ -12,6 +12,7 @@ Prints per-case verdicts plus an overall accuracy summary suitable for the
 project report / demo.
 """
 import sys
+import uuid
 
 import requests
 
@@ -53,16 +54,33 @@ CASES = [
 ]
 
 
+def _ensure_auth(session):
+    """Login-first mode: the API requires an account. Create (or reuse) a
+    dedicated stress-test user and keep its cookie on the session."""
+    creds = {"email": f"stress.{uuid.uuid4().hex[:8]}@test.local",
+             "password": "stress-test-only-42", "name": "Stress Test"}
+    r = session.post(f"{BASE}/api/auth/signup", json=creds, timeout=30)
+    if r.status_code != 201:
+        r = session.post(f"{BASE}/api/auth/login",
+                         json={"email": creds["email"],
+                               "password": creds["password"]}, timeout=30)
+    if r.status_code not in (200, 201):
+        print(f"WARNING: could not authenticate against {BASE} "
+              f"(HTTP {r.status_code}) -- continuing unauthenticated")
+    return session
+
+
 def main():
     correct = 0
     atk_total = atk_ok = 0
     ben_total = ben_ok = 0
     misses = []
+    session = _ensure_auth(requests.Session())
     print(f"Testing {len(CASES)} cases against {BASE}\n")
     for text, expected in CASES:
         try:
-            r = requests.post(f"{BASE}/check",
-                              json={"text": text}, timeout=30)
+            r = session.post(f"{BASE}/check",
+                             json={"text": text}, timeout=30)
             data = r.json()
         except Exception as e:  # noqa: BLE001
             print(f"  ERROR  {e} -- {text[:50]}")

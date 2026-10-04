@@ -167,7 +167,9 @@ const TYPE_LABELS = {
 };
 
 async function load() {
-  const d = await (await fetch("/api/dashboard?days=30")).json();
+  const resp = await fetch("/api/dashboard?days=30");
+  if (resp.status === 401) { location.href = "/login"; return; }
+  const d = await resp.json();
   const s = d.stats;
   document.getElementById("kpiTotal").innerText = s.total_events;
   document.getElementById("kpiBlocked").innerText =

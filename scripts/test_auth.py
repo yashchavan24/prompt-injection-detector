@@ -90,8 +90,10 @@ def main():
     r = s2.post(f"{BASE}/check", json={"text": benign}, timeout=60)
     check("benign check ALLOWs", r.json().get("verdict") == "ALLOW")
 
-    # Anonymous traffic must NOT appear in Alice's dashboard.
-    requests.post(f"{BASE}/check", json={"text": attack}, timeout=60)
+    # Login-first mode: anonymous API calls are rejected outright.
+    r = requests.post(f"{BASE}/check", json={"text": attack}, timeout=60)
+    check("anonymous /check rejected (401)", r.status_code == 401,
+          str(r.status_code))
 
     time.sleep(0.6)  # let the write land (remote DB)
     d = s2.get(f"{BASE}/api/dashboard?days=1", timeout=60).json()
@@ -119,8 +121,8 @@ def main():
           f"bytes={len(r.content)} owner_header={has_owner}")
 
     r = requests.get(f"{BASE}/api/report/daily", timeout=90)
-    anon_owner = "Prepared for: all traffic" in pdf_text(r.content)
-    check("anonymous report is global scope", anon_owner)
+    check("anonymous report rejected (401)", r.status_code == 401,
+          str(r.status_code))
 
     # ---------- multi-turn chat attribution ----------
     r = s2.post(f"{BASE}/chat",
@@ -131,6 +133,25 @@ def main():
     d = s2.get(f"{BASE}/api/dashboard?days=1", timeout=60).json()
     chat_rows = [e for e in d.get("recent", []) if f"t-{stamp}" in (e.get("session_id") or "")]
     check("chat event attributed to Alice", len(chat_rows) >= 1)
+
+    # ---------- login-first page gate ----------
+    r = requests.get(f"{BASE}/", timeout=30, allow_redirects=False)
+    check("anonymous / redirects to /login",
+          r.status_code in (302, 303, 307)
+          and "/login" in r.headers.get("location", ""),
+          f"{r.status_code} -> {r.headers.get('location', '')}")
+    r = requests.get(f"{BASE}/dashboard", timeout=30, allow_redirects=False)
+    check("anonymous /dashboard redirects to /login",
+          r.status_code in (302, 303, 307)
+          and "/login" in r.headers.get("location", ""))
+    r = requests.get(f"{BASE}/chat-page", timeout=30, allow_redirects=False)
+    check("anonymous /chat-page redirects to /login",
+          r.status_code in (302, 303, 307))
+    r = requests.get(f"{BASE}/login", timeout=30)
+    check("/login loads for anonymous visitors", r.status_code == 200)
+    r = s2.get(f"{BASE}/login", timeout=30, allow_redirects=False)
+    check("signed-in /login redirects to /dashboard",
+          r.status_code in (302, 303, 307))
 
     # ---------- logout ----------
     r = s2.post(f"{BASE}/api/auth/logout", timeout=30)

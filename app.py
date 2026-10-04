@@ -26,6 +26,7 @@ Set one of these env vars to plug in a provider:
 """
 import json
 import os
+from urllib.parse import quote
 
 import joblib
 import numpy as np
@@ -38,7 +39,8 @@ import uuid
 import requests
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
+                               Response)
 from pydantic import BaseModel
 
 import attack_log
@@ -240,6 +242,22 @@ def _user_id_of(request: Request):
     return (user or {}).get("id")
 
 
+def _gate_page(request: Request, path: str):
+    """Login-first mode: signed-out visitors are bounced to /login."""
+    if not current_user(request):
+        return RedirectResponse("/login?next=" + quote(path, safe=""),
+                                status_code=303)
+    return None
+
+
+def _gate_api(request: Request):
+    """Login-first mode: signed-out API calls get a 401."""
+    if not current_user(request):
+        return JSONResponse({"error": "Sign in required to use the detector."},
+                            status_code=401)
+    return None
+
+
 class PromptRequest(BaseModel):
     text: str
 
@@ -260,12 +278,16 @@ class AuthRequest(BaseModel):
 
 
 @app.get("/login")
-def login_page():
+def login_page(request: Request):
+    if current_user(request):
+        return RedirectResponse("/dashboard", status_code=303)
     return FileResponse(os.path.join(_static_dir, "login.html"))
 
 
 @app.get("/signup")
-def signup_page():
+def signup_page(request: Request):
+    if current_user(request):
+        return RedirectResponse("/dashboard", status_code=303)
     return FileResponse(os.path.join(_static_dir, "signup.html"))
 
 
@@ -300,6 +322,9 @@ def auth_me(request: Request):
 
 @app.post("/check")
 def check_prompt(req: PromptRequest, request: Request):
+    gate = _gate_api(request)
+    if gate:
+        return gate
     prob, raw, verdict, signals = score_text(req.text)
     if verdict in ("BLOCK", "FLAG"):
         attack_log.log_event(verdict, prob, req.text, signals, source="input",
@@ -316,7 +341,10 @@ def check_prompt(req: PromptRequest, request: Request):
 
 
 @app.post("/batch-check")
-def batch_check(req: BatchRequest):
+def batch_check(req: BatchRequest, request: Request):
+    gate = _gate_api(request)
+    if gate:
+        return gate
     results = []
     for t in req.texts[:100]:
         prob, raw, verdict, signals = score_text(t)
@@ -351,6 +379,9 @@ def providers():
 
 @app.post("/chat")
 def protected_chat(req: ChatRequest, request: Request):
+    gate = _gate_api(request)
+    if gate:
+        return gate
     owner_id = _user_id_of(request)
     prob, raw, verdict, signals = score_text(req.message)
     provider = get_provider()
@@ -523,12 +554,18 @@ def protected_chat(req: ChatRequest, request: Request):
 
 
 @app.get("/dashboard")
-def dashboard_page():
+def dashboard_page(request: Request):
+    gate = _gate_page(request, "/dashboard")
+    if gate:
+        return gate
     return FileResponse(os.path.join(_static_dir, "dashboard.html"))
 
 
 @app.get("/api/dashboard")
 def dashboard_data(request: Request, days: int = Query(default=14, ge=1, le=90)):
+    gate = _gate_api(request)
+    if gate:
+        return gate
     user = current_user(request)
     uid = (user or {}).get("id")
     return {
@@ -540,13 +577,19 @@ def dashboard_data(request: Request, days: int = Query(default=14, ge=1, le=90))
 
 
 @app.get("/api/session/{session_id}")
-def session_data(session_id: str):
+def session_data(session_id: str, request: Request):
+    gate = _gate_api(request)
+    if gate:
+        return gate
     return {"session_id": session_id,
             "history": attack_log.session_history(session_id)}
 
 
 @app.get("/api/report/{period}")
 def report_pdf(period: str, request: Request):
+    gate = _gate_api(request)
+    if gate:
+        return gate
     if period not in ("daily", "weekly", "monthly"):
         return Response(JSON_ERROR, status_code=400,
                         media_type="application/json")
@@ -566,10 +609,16 @@ _static_dir = "static" if os.path.isdir("static") else "api/static"
 
 
 @app.get("/chat-page")
-def chat_page():
+def chat_page(request: Request):
+    gate = _gate_page(request, "/chat-page")
+    if gate:
+        return gate
     return FileResponse(os.path.join(_static_dir, "chat.html"))
 
 
 @app.get("/")
-def root():
+def root(request: Request):
+    gate = _gate_page(request, "/")
+    if gate:
+        return gate
     return FileResponse(os.path.join(_static_dir, "index.html"))

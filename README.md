@@ -109,7 +109,8 @@ Every person can create an account, and their detection history, dashboard and P
 
 - `/signup` and `/login` pages (session-cookie auth; passwords stored as salted PBKDF2-SHA256 hashes, 200k iterations).
 - `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`, `/api/me`.
-- Signed-in users get their own dashboard (`/dashboard`) and their own daily/weekly/monthly PDF reports; anonymous visitors still see the global (all-traffic) view, exactly as before.
+- **Login-first mode:** the whole app sits behind the account layer. Signed-out visitors who open `/`, `/chat-page` or `/dashboard` are redirected to `/login?next=…` (and back to where they headed after signing in); the detector APIs (`/check`, `/batch-check`, `/chat`, `/api/dashboard`, `/api/report/*`, `/api/session/*`) return **401** without a session. Every detection is therefore attributed to a real account and persisted per user.
+- Signed-in users get their own dashboard (`/dashboard`) and their own daily/weekly/monthly PDF reports, scoped to their account only.
 - Event store is dual-backend: **Neon/Postgres** when `DATABASE_URL` is set (persistent across cold starts), SQLite locally otherwise.
 
 Env vars:
