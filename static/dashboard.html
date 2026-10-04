@@ -98,6 +98,7 @@
     <a href="/">Detector</a>
     <a href="/chat-page">Protected chat</a>
     <a href="/docs">API docs</a>
+    <a href="/login" id="signinLink">Sign in</a>
   </div>
 
   <div class="userbar" id="userbar" style="display:none">
@@ -223,6 +224,7 @@ async function load() {
   const bar = document.getElementById("userbar");
   if (d.user) {
     bar.style.display = "flex";
+    document.getElementById("signinLink").style.display = "none";
     document.getElementById("userName").innerText = d.user.name;
     document.getElementById("userScope").innerText =
       "— showing " + d.user.email + "'s saved events; reports cover this account only";

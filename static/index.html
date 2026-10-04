@@ -128,6 +128,8 @@
     <a href="/">Detector</a>
     <a href="/chat-page">Protected chatbot demo &rarr;</a>
     <a href="/dashboard">Live attack dashboard &rarr;</a>
+    <a href="/login" id="signinLink">Sign in</a>
+    <a href="/signup" id="signupLink">Create account</a>
   </div>
 
   <div class="card">
@@ -294,6 +296,24 @@ function renderResult(data) {
     (lexTotal > 0 ? lexTotal + (lexDetail ? " (" + lexDetail + ")" : "") : "0") + "</span></div>";
   document.getElementById("signals").innerHTML = html;
 }
+</script>
+<script>
+// Reflect signed-in state in the nav: hide signup/signin, show account + sign out.
+fetch("/api/me").then(r => r.ok ? r.json() : null).then(d => {
+  if (d && d.user) {
+    const si = document.getElementById("signinLink");
+    const su = document.getElementById("signupLink");
+    si.href = "/dashboard";
+    si.innerText = "\uD83D\uDC64 " + d.user.name + " \u00b7 My dashboard";
+    su.href = "#";
+    su.innerText = "Sign out";
+    su.onclick = async (e) => {
+      e.preventDefault();
+      await fetch("/api/auth/logout", { method: "POST" });
+      location.reload();
+    };
+  }
+}).catch(() => {});
 </script>
 </body>
 </html>
