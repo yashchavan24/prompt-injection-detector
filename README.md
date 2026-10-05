@@ -1,54 +1,182 @@
-# Prompt Injection Detector (v3)
+# 🛡️ Prompt Injection Detector (v3)
 
-A machine learning system for detecting prompt injection attacks in LLM-integrated applications, built as a final year B.Tech Cyber Security project.
+A machine-learning shield that detects prompt injection attacks **before** they reach any LLM — with per-user accounts, a live attack dashboard, and automated PDF security reports. Final year B.Tech Cyber Security project.
 
 **Live demo:** https://prompt-injection-detector-nine.vercel.app
-(Detector UI at `/`, protected chatbot at `/chat-page`, live attack dashboard at `/dashboard`, API docs at `/docs`.)
+**Demo account:** `demo@promptshield.dev` / `DemoViva#2026` (or create your own — the whole app is login-first)
 
-## Overview
+| Detector UI | Protected chatbot | Attack dashboard | PDF report |
+|---|---|---|---|
+| `https://…vercel.app/` | `/chat-page` | `/dashboard` | `/api/report/daily` |
 
-Large Language Models integrated into real applications (chatbots, coding assistants, browser agents) are vulnerable to prompt injection -- attacks where malicious input overrides the model's intended instructions. This project builds a lightweight middleware classifier that screens prompts **before** they reach an LLM, blocking or flagging likely injection attempts in real time.
+---
 
-The v3 detector is **model-agnostic**: the same shield sits in front of ChatGPT, Qwen, Llama, DeepSeek, or any OpenAI-compatible endpoint -- the protected chat demo lets you demonstrate this live.
+## 📸 Screenshots
 
-## Key results (v3)
+**Login-first gate** — every visitor signs in; history and reports are saved to the account.
+
+![Login page](docs/screenshots/login.png)
+
+**Create account** — salted PBKDF2 password hashing, session cookie on signup.
+
+![Signup page](docs/screenshots/signup.png)
+
+**Detector catching a direct override** — BLOCK verdict at 97.5% injection probability, word-level highlights and the full signal breakdown.
+
+![Detector blocking an attack](docs/screenshots/detector-block.png)
+
+**Protected chatbot demo** — the jailbreak is stopped at the input layer; the LLM is never called.
+
+![Chat firewall blocking a jailbreak](docs/screenshots/chat-firewall.png)
+
+**Live attack dashboard (per-user)** — KPIs, criticality and attack-type breakdowns, 14-day timeline and the live event feed, scoped to the signed-in account.
+
+![Per-user attack dashboard](docs/screenshots/dashboard.png)
+
+**Automated PDF security report** — executive summary, attack taxonomy, mitigations and incident log, generated per account ("Prepared for: …").
+
+![PDF daily report page 1](docs/screenshots/report-daily-1.png)
+![PDF daily report page 2](docs/screenshots/report-daily-2.png)
+
+---
+
+## 🎯 Key results
 
 | Evaluation | Result |
 |---|---|
-| Held-out test verdict accuracy (3-way verdicts) | **97.6%** |
-| Held-out test AUROC | 0.9985 |
-| Curated adversarial set -- attacks flagged | **30/30 (100%)** |
-| Curated adversarial set -- benign allowed | **29/29 (100%)** |
-| Fresh edge-case sweep (novel phrasings) | ~94-100% |
-| Live API stress test (28 cases, local & deployed) | **100%** |
+| Held-out test verdict accuracy (3-way ALLOW/FLAG/BLOCK) | **98.26%** |
+| Held-out test AUROC | **0.9987** |
+| Curated adversarial red-team set — attacks caught | **30/30 (100%)** |
+| Live API stress test (29 cases, local **and** production) | **29/29 (100%)** |
+| Multi-step social-engineering scenarios (12 × 4-turn) jailbroken | **0/12** |
 
-## Architecture
+The multi-step red-team ([report](docs/MULTISTEP_REDTEAM.md)) escalates from benign pretexts to system-prompt extraction across 4 conversational turns: 8/12 scenarios were stopped by the input-layer detector, the other 4 by the output firewall — no secret ever leaked.
 
+## 🏗️ System architecture
+
+```mermaid
+flowchart TB
+    U["👤 User browser / Chrome extension"] --> GW["Login-first gate<br/>session cookie required"]
+    GW -- "no session: 303 → /login?next=… / 401" --> AUTH["auth.py — signup / login<br/>PBKDF2-SHA256 + HMAC cookie"]
+    AUTH --> U
+    GW -- "authenticated" --> APP["FastAPI app (Vercel serverless)"]
+    APP --> DET["🧠 v3 Detector<br/>TF-IDF ×2 + 39 heuristics + calibrated ensemble"]
+    DET -- "ALLOW / FLAG" --> LLM["LLM provider layer<br/>ChatGPT · Qwen · Groq · DeepSeek · any OpenAI-compatible API"]
+    DET -- "BLOCK" --> U
+    LLM --> OFW["🛡️ Output firewall<br/>canary scan + reply re-scoring"]
+    OFW -- "clean reply" --> U
+    OFW -- "leak / injection" --> U
+    APP -- "every event" --> LOG["attack_log.py"]
+    LOG --> PG[("Neon Postgres<br/>persistent, per-user")]
+    LOG -. "local dev fallback" .-> SL[("SQLite")]
+    LOG --> DASH["Live dashboard + per-user PDF reports"]
+    DASH --> U
 ```
-user prompt ──> [ v3 Detector ] ──ALLOW──> LLM (ChatGPT / Qwen / Llama / DeepSeek ...)
-                     │                        ^ system prompt + canary secret
-                     ├──FLAG──> passed with warning banner (human in the loop)
-                     └──BLOCK──> request never reaches the model
 
-LLM reply ───> [ Output Firewall + Canary scan ] ──clean──> user
-                     └── leak/injection detected ──> suppressed + alarm + log
+## 🔍 Detection pipeline
 
-every FLAG/BLOCK/output-block ──> SQLite event store ──> /dashboard + PDF reports
+```mermaid
+flowchart LR
+    IN["Prompt text"] --> F1["Word TF-IDF<br/>uni + bigrams"]
+    IN --> F2["Char TF-IDF<br/>2-5 grams, catches leetspeak"]
+    IN --> F3["39 heuristic signals<br/>lexicons · regexes · fuzzy jailbreak match · obfuscation"]
+    F1 --> ENS["Calibrated ensemble<br/>LinearSVC + LogisticRegression"]
+    F2 --> ENS
+    F3 --> ENS
+    ENS --> GR["Explainable guardrails<br/>hard-attack floor · concept-question cap · harmless-roleplay cap"]
+    GR --> TH["Thresholds<br/>BLOCK ≥ 0.78 · FLAG ≥ 0.76"]
+    TH --> B["⛔ BLOCK — never reaches the model"]
+    TH --> FL["⚠️ FLAG — human in the loop"]
+    TH --> AL["✅ ALLOW — forwarded"]
 ```
 
-**Detection pipeline (v3):**
-1. **Word TF-IDF** (unigrams + bigrams) -- phrasing-level signals.
-2. **Character TF-IDF** (2-5 grams) -- catches leetspeak, obfuscation, misspellings.
-3. **39 heuristic features** -- categorized attack lexicons (override, persona, system-prompt probes, exfiltration, encoding, false authority, urgency, delimiters), high-precision regexes, inverted-index fuzzy matching against canonical jailbreak phrases (rapidfuzz), and obfuscation detectors (zero-width chars, homoglyphs, letter-spelling).
-4. **Calibrated ensemble** -- LinearSVC (CalibratedClassifierCV) + LogisticRegression, features scaled.
-5. **Explainable guardrails** -- concept-question cap (questions *about* security topics are allowed), harmless-roleplay cap, advice-question cap, and a hard-attack floor (override+system combos, exfiltration, spelled-out attacks, guardrail-disable directives force FLAG/BLOCK).
-6. **Threshold tuning** -- BLOCK/FLAG thresholds chosen on validation to maximize 3-way verdict accuracy.
+## 🧅 Defense in depth (protected chat)
 
-Training data: ~17k labeled prompts from 3 public datasets (deepset prompt-injections, safeguard, jayavibhav) + 2.2k synthetic adversarial augmentations.
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant D as Detector (input layer)
+    participant M as LLM + canary secret
+    participant O as Output firewall
+    U->>D: message
+    D-->>U: BLOCK → LLM never called (input-layer stop)
+    D->>M: ALLOW/FLAG forwarded with canary-tagged system prompt
+    M->>O: reply
+    O->>O: canary leak scan + full re-score
+    O-->>U: clean reply
+    O-->>U: OUTPUT_BLOCK → reply suppressed + alarm
+    Note over D,O: every FLAG/BLOCK/OUTPUT_BLOCK is logged per user
+```
 
-## Model-agnostic LLM providers
+## 🔐 Authentication & login-first flow
 
-`/chat` auto-detects the configured provider from environment variables -- all speak the OpenAI chat protocol:
+The whole app sits behind accounts: signed-out visitors who open `/`, `/chat-page` or `/dashboard` are redirected to `/login?next=…` (and returned where they headed after signing in), and the detector APIs (`/check`, `/batch-check`, `/chat`, `/api/dashboard`, `/api/report/*`, `/api/session/*`) return **401** without a session. Every detection is therefore attributed to a real account — no anonymous mode.
+
+```mermaid
+flowchart TB
+    V["Visitor opens any page"] --> C{"valid session<br/>cookie?"}
+    C -- "no (page)" --> R["303 → /login?next=path"]
+    C -- "no (API)" --> E["401 Sign in required"]
+    C -- "yes" --> APP["App renders / API responds"]
+    R --> L["Login or Signup"]
+    E --> L
+    L --> V2["PBKDF2 verify / create user"]
+    V2 --> CK["Set-Cookie pig_session<br/>HMAC v1.{user}.{exp}.{sig} · 30 days · httponly"]
+    CK --> B["Redirect to next path or /dashboard"]
+```
+
+Per-user data model (Neon Postgres; SQLite fallback locally):
+
+```mermaid
+erDiagram
+    USERS ||--o{ EVENTS : "owns (user_id)"
+    USERS {
+        text id PK
+        text email
+        text name
+        text pw_hash
+        real created_at
+    }
+    EVENTS {
+        text id PK
+        real ts
+        text user_id FK
+        text verdict
+        real probability
+        text attack_type
+        text criticality
+        text source
+        bool canary
+        text session_id
+        text text
+        text signals
+    }
+```
+
+Schema details: `email` is unique per account, `pw_hash` stores a PBKDF2-SHA256 hash (200k iterations), `verdict` is `BLOCK / FLAG / OUTPUT_BLOCK` and `source` is `input / output`.
+
+## 📡 API
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/auth/signup` | Create account (email + 8+ char password) → 201 + session cookie |
+| `POST /api/auth/login` | Login → 200 + session cookie (401 on wrong password) |
+| `POST /api/auth/logout` | Clear session |
+| `GET /api/me` | Current user (or `null`) |
+| `POST /check` 🔒 | `{"text": …}` → verdict, probability, signals, highlight spans |
+| `POST /batch-check` 🔒 | Screen up to 100 texts at once |
+| `POST /chat` 🔒 | Protected chat: input screening → LLM → output firewall; optional `session_id` |
+| `GET /api/dashboard` 🔒 | Per-user stats, taxonomy, recent events (JSON) |
+| `GET /api/report/{daily\|weekly\|monthly}` 🔒 | Per-user PDF security report |
+| `GET /api/session/{id}` 🔒 | Per-session verdict history |
+| `GET /providers` | Which LLM provider/model is active |
+| `GET /` · `/chat-page` · `/dashboard` | UI pages (🔒 redirect to login when signed out) |
+
+🔒 = requires session cookie (401 without).
+
+## 🤖 Model-agnostic LLM providers
+
+`/chat` auto-detects the configured provider from environment variables — all speak the OpenAI chat protocol:
 
 | Provider | Env var | Default model |
 |---|---|---|
@@ -60,81 +188,61 @@ Training data: ~17k labeled prompts from 3 public datasets (deepset prompt-injec
 | Together AI | `TOGETHER_API_KEY` | Llama-3-8b |
 | Any OpenAI-compatible endpoint | `CUSTOM_LLM_URL` + `CUSTOM_LLM_KEY` | `CUSTOM_LLM_MODEL` |
 
-Groq note: model IDs rotate frequently, so the app resolves the best available chat model from the account's `/models` list at request time and falls back through a preference list if a model is rejected -- the demo never dead-ends mid-presentation.
+Groq note: model IDs rotate frequently, so the app resolves the best available chat model from the account's `/models` list at request time and falls back through a preference list — the demo never dead-ends mid-presentation. The deployed instance uses **Groq** and currently serves `openai/gpt-oss-120b`.
 
-The deployed instance uses **Groq** (`GROQ_API_KEY` set as a Vercel env var) and currently serves `openai/gpt-oss-120b`. To demo with ChatGPT or Qwen instead, add their API key in the Vercel dashboard -- the detector is untouched, only the model behind it changes.
+## 🧪 Training data
 
-## API
+~17k labeled prompts from 3 public datasets (deepset prompt-injections, safeguard, jayavibhav) + 2.2k synthetic adversarial augmentations + a jailbreak-family augmentation pass that teaches the model itself to catch paraphrased red-team bypasses.
 
-| Endpoint | Description |
-|---|---|
-| `POST /check` | `{\"text\": ...}` -> verdict, probability, signals, word-level highlight spans |
-| `POST /batch-check` | Screen up to 100 texts at once |
-| `POST /chat` | Protected chat: input screening -> LLM -> output firewall + canary scan; optional `session_id` for multi-turn tracking |
-| `GET /providers` | Which provider/model is active |
-| `GET /chat-page` | Protected chatbot demo UI |
-| `GET /dashboard` + `/api/dashboard` | Live attack dashboard UI + JSON stats/feed |
-| `GET /api/report/{daily\|weekly\|monthly}` | PDF security report (summary, taxonomy, mitigations, incidents) |
-| `GET /api/session/{id}` | Per-session verdict history |
-| `GET /` | Detector playground UI |
+## 🧩 Chrome extension
 
-## Chrome extension
+`extension/` contains a Manifest V3 extension that checks any prompt typed into ChatGPT, Claude, Gemini, Qwen, DeepSeek, Copilot, Mistral, or Grok before you send it — floating button + auto-check on send, verdict banner with probability and signals. Load via `chrome://extensions` → Developer mode → Load unpacked.
 
-`extension/` contains a Manifest V3 extension that checks any prompt typed into ChatGPT, Claude, Gemini, Qwen (chat.qwen.ai), DeepSeek, Copilot, Mistral, or Grok before you send it -- floating button + auto-check on send, verdict banner with probability and signals. Load it via `chrome://extensions` -> Developer mode -> Load unpacked.
-
-## Local setup
+## 💻 Local setup
 
 ```bash
 python -m venv venv
-venv/Scripts/pip install -r requirements.txt      # Windows; linux: venv/bin/pip
-venv/Scripts/python scripts/unify_data.py          # build training data
-venv/Scripts/python scripts/train_v3.py            # train + evaluate + save artifacts
-venv/Scripts/python scripts/copy_models_to_api.py  # copy artifacts for Vercel
+venv/Scripts/pip install -r requirements.txt       # Windows; linux: venv/bin/pip
+venv/Scripts/python scripts/unify_data.py           # build training data
+venv/Scripts/python scripts/train_v3.py             # train + evaluate + save artifacts
+venv/Scripts/python scripts/copy_models_to_api.py   # copy artifacts for Vercel
 venv/Scripts/python -m uvicorn app:app --port 8000
-venv/Scripts/python scripts/stress_test_v3.py      # 28-case live accuracy report
 ```
 
-`app.py` reads `.env` for provider keys locally; on Vercel use dashboard/CLI env vars.
+`app.py` reads `.env` locally (provider key, optional `DATABASE_URL`, auto-generates `AUTH_SECRET` into `data/.auth_secret`); on Vercel use dashboard/CLI env vars.
 
-## Deployment (Vercel)
+## ☁️ Deployment (Vercel)
 
-- `api/index.py` -- serverless entry exposing the FastAPI app.
-- `vercel.json` -- Python 3.12 runtime, model artifacts bundled via `includeFiles`.
-- Model artifacts (~4 MB total) live in `models/` and are committed to the repo, so both `vercel --prod` and the GitHub integration bundle them via `includeFiles`. After retraining, commit the new artifacts (or run `scripts/copy_models_to_api.py` for the legacy `api/models/` layout).
-- Required env var for the chat demo: `GROQ_API_KEY` (or any other provider key).
+- `api/index.py` — serverless entry exposing the FastAPI app.
+- `vercel.json` — Python 3.12 runtime, model artifacts bundled via `includeFiles` (committed in `models/`, ~4 MB).
+- Environment variables:
+  - `GROQ_API_KEY` (or any provider key) — powers the chat demo.
+  - `DATABASE_URL` — Neon Postgres pooled connection string; persistent per-user store.
+  - `AUTH_SECRET` — random hex; keeps sessions valid across cold starts.
+- Deploy: `vercel --prod --yes`.
 
-## Accounts, per-user history & reports
+## ✅ Testing
 
-Every person can create an account, and their detection history, dashboard and PDF reports are saved **per user** so nothing gets lost:
+| Script | What it does |
+|---|---|
+| `scripts/stress_test_v3.py [url]` | 29-case live accuracy report (signs in with a test account) — **29/29 local & production** |
+| `scripts/test_auth.py [url]` | 24-check auth/scoping smoke test: signup, login, 401s, page gate, per-user isolation, per-user PDF |
+| `scripts/redteam_multistep.py [url]` | 12 multi-step social-engineering scenarios (see [docs/MULTISTEP_REDTEAM.md](docs/MULTISTEP_REDTEAM.md)) |
+| `scripts/take_screenshots.py [url]` | Regenerates the screenshots in `docs/screenshots/` via headless Chrome |
 
-- `/signup` and `/login` pages (session-cookie auth; passwords stored as salted PBKDF2-SHA256 hashes, 200k iterations).
-- `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`, `/api/me`.
-- **Login-first mode:** the whole app sits behind the account layer. Signed-out visitors who open `/`, `/chat-page` or `/dashboard` are redirected to `/login?next=…` (and back to where they headed after signing in); the detector APIs (`/check`, `/batch-check`, `/chat`, `/api/dashboard`, `/api/report/*`, `/api/session/*`) return **401** without a session. Every detection is therefore attributed to a real account and persisted per user.
-- Signed-in users get their own dashboard (`/dashboard`) and their own daily/weekly/monthly PDF reports, scoped to their account only.
-- Event store is dual-backend: **Neon/Postgres** when `DATABASE_URL` is set (persistent across cold starts), SQLite locally otherwise.
-
-Env vars:
-
-```
-DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require   # Neon pooled connection
-AUTH_SECRET=<random hex>                                                      # set on Vercel so sessions survive cold starts
-```
-
-## Project layout
+## 📁 Project layout
 
 ```
-app.py                  FastAPI app (detector + protected chat + provider layer + auth)
+app.py                  FastAPI app: detector + protected chat + auth gate + provider layer
 detector.py             Shared featurization + guardrails + highlight spans
-attack_log.py           Event store (SQLite local / Neon Postgres on Vercel): taxonomy, criticality, session risk, per-user scope
-auth.py                 Accounts (PBKDF2) + HMAC-signed session cookies
+auth.py                 Accounts (PBKDF2) + HMAC-signed session cookies + login-first helpers
+attack_log.py           Event store (Neon Postgres / SQLite): taxonomy, criticality, session risk, per-user scope
 report_generator.py     Periodic PDF security report (reportlab), per-account scope
-scripts/train_v3.py     Training, augmentation, threshold tuning, evaluation
-scripts/stress_test_v3.py  Live 28-case accuracy report (local or deployed URL)
-api/index.py + vercel.json  Vercel serverless deployment
-static/                 Detector + chat + dashboard UIs
+static/                 Detector + chat + dashboard + login/signup UIs
 extension/              Chrome extension for major AI chat sites
 models/                 Trained v3 artifacts (committed, ~4 MB)
-data/                   Training datasets (gitignored; pig_events.db lives here locally)
+scripts/                train_v3, stress_test_v3, test_auth, redteam_multistep, take_screenshots, …
+docs/                   MULTISTEP_REDTEAM.md + screenshots/
+api/index.py + vercel.json  Vercel serverless deployment
+data/                   Local store (gitignored): SQLite DB, .auth_secret
 ```
-
-Note: on Vercel with the default SQLite backend the event store lives on `/tmp` (ephemeral per warm container). Set `DATABASE_URL` (Neon/Postgres) for a persistent store that also powers per-user accounts and reports.
