@@ -1,13 +1,24 @@
 # 🛡️ Prompt Injection Detector (v3)
 
-A machine-learning shield that detects prompt injection attacks **before** they reach any LLM — with per-user accounts, a live attack dashboard, and automated PDF security reports. Final year B.Tech Cyber Security project.
+![Test accuracy](https://img.shields.io/badge/test%20accuracy-98.26%25-brightgreen)
+![AUROC](https://img.shields.io/badge/AUROC-0.9987-blue)
+![Red-team attacks caught](https://img.shields.io/badge/red--team%20attacks%20caught-30%2F30-red)
+![Live stress test](https://img.shields.io/badge/live%20stress%20test-29%2F29-orange)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-serverless-009688?logo=fastapi&logoColor=white)
+![Deployed](https://img.shields.io/badge/deployed-Vercel-black?logo=vercel&logoColor=white)
 
-**Live demo:** https://prompt-injection-detector-nine.vercel.app
-**Demo account:** `demo@promptshield.dev` / `DemoViva#2026` (or create your own — the whole app is login-first)
+**A machine-learning firewall for LLM prompts.** Every prompt is screened *before* it reaches the model: a TF‑IDF + 39-heuristic ensemble issues an **ALLOW / FLAG / BLOCK** verdict in milliseconds, catching instruction overrides, roleplay jailbreaks, multi-step social-engineering and system-prompt exfiltration. Every model reply is re-scored by an **output firewall** (canary-token scan + full re-detection) to stop indirect leaks. All events land on a **per-user security dashboard** with criticality ratings and automated **daily / weekly / monthly PDF reports**.
 
-| Detector UI | Protected chatbot | Attack dashboard | PDF report |
+The shield is **model-agnostic** — point it at ChatGPT, Qwen, Llama, DeepSeek or any OpenAI-compatible API and it protects them all identically. The whole app is **login-first**: accounts with PBKDF2-hashed passwords and HMAC-signed sessions, history scoped per user, persisted on Neon Postgres.
+
+Built as a final year B.Tech Cyber Security project.
+
+| 🎯 Detector | 💬 Protected chatbot | 📊 Attack dashboard | 📄 PDF report |
 |---|---|---|---|
-| `https://…vercel.app/` | `/chat-page` | `/dashboard` | `/api/report/daily` |
+| [Try it live](https://prompt-injection-detector-nine.vercel.app/) | [Chat demo](https://prompt-injection-detector-nine.vercel.app/chat-page) | [Dashboard](https://prompt-injection-detector-nine.vercel.app/dashboard) | [Daily report](https://prompt-injection-detector-nine.vercel.app/api/report/daily) |
+
+**Demo account:** `demo@promptshield.dev` / `DemoViva#2026` (or create your own)
 
 ---
 
@@ -84,7 +95,7 @@ flowchart LR
     F2 --> ENS
     F3 --> ENS
     ENS --> GR["Explainable guardrails<br/>hard-attack floor · concept-question cap · harmless-roleplay cap"]
-    GR --> TH["Thresholds<br/>BLOCK ≥ 0.78 · FLAG ≥ 0.76"]
+    GR --> TH["Thresholds<br/>BLOCK ≥ 0.74 · FLAG ≥ 0.72"]
     TH --> B["⛔ BLOCK — never reaches the model"]
     TH --> FL["⚠️ FLAG — human in the loop"]
     TH --> AL["✅ ALLOW — forwarded"]

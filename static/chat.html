@@ -11,19 +11,60 @@
     font-family: -apple-system, "Segoe UI", Arial, sans-serif;
     background: #0f1117;
     color: #e6e6e6;
-    display: flex;
-    justify-content: center;
-    padding: 30px 20px;
   }
-  .container { width: 100%; max-width: 700px; }
+  .container { width: 100%; max-width: 700px; margin: 0 auto; padding: 26px 20px 50px; }
   h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
   .subtitle { color: #8b8f9a; font-size: 13px; margin-bottom: 8px; line-height: 1.5; }
-  .nav { margin-bottom: 16px; }
-  .nav a {
-    color: #4a7dff; text-decoration: none; font-size: 14px;
-    margin-right: 16px; font-weight: 600;
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 12px;
+    background: #161922; border-bottom: 1px solid #262a35;
+    padding: 10px 22px;
   }
-  .nav a:hover { text-decoration: underline; }
+  .brand {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 800; color: #fff;
+    text-decoration: none; letter-spacing: .2px; white-space: nowrap;
+  }
+  .brand .ver {
+    font-size: 10.5px; font-weight: 700; color: #4a7dff;
+    border: 1px solid #4a7dff; border-radius: 999px; padding: 1px 8px;
+  }
+  .nav { display: flex; gap: 4px; }
+  .nav a {
+    color: #b7bac2; text-decoration: none; font-size: 13.5px;
+    font-weight: 600; padding: 7px 13px; border-radius: 8px; white-space: nowrap;
+  }
+  .nav a:hover { background: #1d212c; color: #fff; }
+  .nav a.active { background: #1d212c; color: #4a7dff; }
+  .account { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, #4a7dff, #7c5cff);
+    color: #fff; font-size: 13px; font-weight: 800;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .who {
+    font-size: 13px; font-weight: 700; color: #e6e6e6;
+    max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 700;
+    text-decoration: none; cursor: pointer; border: 1px solid transparent;
+    font-family: inherit; white-space: nowrap;
+  }
+  .btn.primary { background: #4a7dff; color: #fff; }
+  .btn.primary:hover { background: #3a6aef; }
+  .btn.ghost { border-color: #2a2e3a; color: #b7bac2; background: transparent; }
+  .btn.ghost:hover { border-color: #4a7dff; color: #fff; }
+  .btn.signout { border-color: #2a2e3a; color: #b7bac2; background: transparent; }
+  .btn.signout:hover { border-color: #f87171; color: #f87171; }
+  @media (max-width: 640px) {
+    .who { display: none; }
+    .nav a { padding: 7px 9px; }
+    .topbar { padding: 10px 14px; gap: 8px; }
+  }
   .provider-badge {
     display: inline-block;
     background: #123524;
@@ -104,10 +145,21 @@
 </style>
 </head>
 <body>
+<header class="topbar">
+  <a class="brand" href="/">🛡️ PromptShield <span class="ver">v3</span></a>
+  <nav class="nav">
+    <a href="/">Detector</a>
+    <a href="/chat-page" class="active">Chat demo</a>
+    <a href="/dashboard">Dashboard</a>
+  </nav>
+  <div class="account" id="accountArea">
+    <a class="btn ghost" href="/login" id="signinBtn">Sign in</a>
+    <a class="btn primary" href="/signup" id="signupBtn">Create account</a>
+  </div>
+</header>
 <div class="container">
   <h1>Protected Chatbot Demo</h1>
   <p class="subtitle">Every message is screened by the v3 detector before it reaches the AI model. The model behind it is whatever provider you configure &mdash; ChatGPT, Qwen, Llama, DeepSeek &mdash; the shield works identically for all of them.</p>
-  <div class="nav"><a href="/">&larr; Detector</a> <a href="/dashboard">Live attack dashboard &rarr;</a></div>
   <div><span class="provider-badge none" id="providerBadge">Checking provider...</span></div>
 
   <div class="chat-window" id="chatWindow">
@@ -254,6 +306,23 @@ async function sendMessage() {
   sendBtn.disabled = false;
   input.focus();
 }
+
+fetch("/api/me").then(r => r.ok ? r.json() : null).then(d => {
+  if (d && d.user) {
+    const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const name = d.user.name || d.user.email || "Account";
+    document.getElementById("accountArea").innerHTML =
+      '<span class="avatar">' + esc(name.trim().charAt(0).toUpperCase()) + '</span>' +
+      '<span class="who" title="' + esc(d.user.email || "") + '">' + esc(name) + '</span>' +
+      '<a class="btn ghost" href="/dashboard">My dashboard</a>' +
+      '<button class="btn signout" id="signoutBtn">Sign out</button>';
+    document.getElementById("signoutBtn").onclick = async () => {
+      await fetch("/api/auth/logout", { method: "POST" });
+      location.href = "/";
+    };
+  }
+}).catch(() => {});
 </script>
 </body>
 </html>
