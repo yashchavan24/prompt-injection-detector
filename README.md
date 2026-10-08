@@ -1,4 +1,4 @@
-# 🛡️ Prompt Injection Detector (v3)
+# <img src="static/logo.png" width="46" align="top" alt="PromptShield logo"> Prompt Injection Detector (v3)
 
 ![Test accuracy](https://img.shields.io/badge/test%20accuracy-98.26%25-brightgreen)
 ![AUROC](https://img.shields.io/badge/AUROC-0.9987-blue)

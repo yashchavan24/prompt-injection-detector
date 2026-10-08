@@ -616,6 +616,18 @@ def chat_page(request: Request):
     return FileResponse(os.path.join(_static_dir, "chat.html"))
 
 
+@app.get("/logo.png")
+def logo_png():
+    return FileResponse(os.path.join(_static_dir, "logo.png"),
+                        media_type="image/png")
+
+
+@app.get("/favicon.ico")
+def favicon_ico():
+    return FileResponse(os.path.join(_static_dir, "favicon.ico"),
+                        media_type="image/x-icon")
+
+
 @app.get("/")
 def root(request: Request):
     gate = _gate_page(request, "/")

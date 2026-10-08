@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Protected Chatbot Demo</title>
+<link rel="icon" type="image/png" href="/logo.png">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -30,6 +31,7 @@
     font-size: 10.5px; font-weight: 700; color: #4a7dff;
     border: 1px solid #4a7dff; border-radius: 999px; padding: 1px 8px;
   }
+  .brand-logo { width: 22px; height: 22px; display: block; }
   .nav { display: flex; gap: 4px; }
   .nav a {
     color: #b7bac2; text-decoration: none; font-size: 13.5px;
@@ -146,7 +148,7 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/">🛡️ PromptShield <span class="ver">v3</span></a>
+  <a class="brand" href="/"><img class="brand-logo" src="/logo.png" alt="PromptShield logo">PromptShield <span class="ver">v3</span></a>
   <nav class="nav">
     <a href="/">Detector</a>
     <a href="/chat-page" class="active">Chat demo</a>
