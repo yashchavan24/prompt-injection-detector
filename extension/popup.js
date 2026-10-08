@@ -6,7 +6,7 @@ document.getElementById("toggleSettings").addEventListener("click", () => {
   settingsDiv.classList.toggle("open");
 });
 
-chrome.storage.sync.get({ apiUrl: DEFAULT_API, autoCheck: false }, (cfg) => {
+chrome.storage.sync.get({ apiUrl: DEFAULT_API, autoCheck: true }, (cfg) => {
   document.getElementById("apiUrl").value = cfg.apiUrl || DEFAULT_API;
   document.getElementById("autoCheck").checked = !!cfg.autoCheck;
 });
@@ -35,7 +35,7 @@ document.getElementById("checkBtn").addEventListener("click", async () => {
   resultDiv.textContent = "Checking...";
 
   try {
-    const res = await fetch(base + "/check", {
+    const res = await fetch(base + "/api/guard-check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),

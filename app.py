@@ -26,6 +26,7 @@ Set one of these env vars to plug in a provider:
 """
 import json
 import os
+from collections import deque
 from urllib.parse import quote
 
 import joblib
@@ -337,6 +338,35 @@ def check_prompt(req: PromptRequest, request: Request):
         "thresholds": {"block": T_BLOCK, "flag": T_FLAG},
         "signals": signals,
         "highlight": highlight_spans(req.text, signals),
+    }
+
+
+_guard_rate: dict = {}  # ip -> deque of timestamps (extension rate limiting)
+
+
+@app.post("/api/guard-check")
+def guard_check(req: PromptRequest, request: Request):
+    """Public, rate-limited scan endpoint for the browser extension.
+
+    The extension runs signed-out inside AI chat sites, so it cannot use the
+    login-gated /check. Verdicts are computed but not logged to any account.
+    """
+    ip = (request.client.host if request.client else "unknown")
+    now = time.time()
+    hits = _guard_rate.setdefault(ip, deque())
+    while hits and now - hits[0] > 60:
+        hits.popleft()
+    if len(hits) >= 60:
+        return JSONResponse({"error": "Rate limit exceeded."}, status_code=429)
+    hits.append(now)
+    prob, raw, verdict, signals = score_text(req.text)
+    return {
+        "text": req.text,
+        "injection_probability": round(prob, 3),
+        "raw_model_probability": round(raw, 3),
+        "verdict": verdict,
+        "thresholds": {"block": T_BLOCK, "flag": T_FLAG},
+        "signals": signals,
     }
 
 
