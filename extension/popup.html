@@ -22,11 +22,13 @@
   .settings input[type=text] { width: 100%; background: #161922; border: 1px solid #262a35; border-radius: 6px; color: #e6e6e6; padding: 6px 8px; font-size: 12px; box-sizing: border-box; }
   .settings .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
   .saved { color: #4ade80; font-size: 11px; margin-top: 6px; display: none; }
+  .hint { margin-top: 10px; font-size: 10.5px; color: #8b8f9a; line-height: 1.5; border-top: 1px solid #262a35; padding-top: 8px; }
 </style>
 </head>
 <body>
   <h2>Prompt Injection Guard</h2>
-  <div class="subtitle">Works on ChatGPT, Claude, Gemini, Qwen, DeepSeek, Copilot, Mistral &amp; Grok.</div>
+  <div class="subtitle">Works on ChatGPT, Claude, Gemini, Qwen, DeepSeek, Copilot, Mistral &amp; Grok. <span id="ver"></span></div>
+  <div class="hint">After installing or updating: click the reload (↻) on this extension in <b>chrome://extensions</b>, then refresh the AI chat tab. You should see a floating "Check for injection" button at the bottom-right of the chat page.</div>
   <textarea id="inputText" placeholder="Paste any prompt to check..."></textarea>
   <button id="checkBtn">Check prompt</button>
   <div id="result"></div>

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt Injection Guard",
-  "version": "2.0",
+  "version": "2.1",
   "description": "Screens prompts for injection attacks before sending to ANY AI chatbot: ChatGPT, Claude, Gemini, Qwen, DeepSeek, Copilot, Mistral, Grok.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [

@@ -1,4 +1,8 @@
 const DEFAULT_API = "https://prompt-injection-detector-nine.vercel.app";
+try {
+  document.getElementById("ver").textContent =
+    "v" + chrome.runtime.getManifest().version;
+} catch (e) {}
 
 // ---- settings ----
 const settingsDiv = document.getElementById("settings");
