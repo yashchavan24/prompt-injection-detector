@@ -876,7 +876,7 @@ def build_body():
         "reports.", "body"))
     story.append(KeepTogether([
         Image(os.path.join(TMP, "arch.png"),
-              width=5.5 * inch, height=3.3 * inch),
+              width=TEXT_W, height=TEXT_W * 3.3 / 5.5),
         fig_cap("Fig. 2.1: System architecture of PromptShield")]))
     story.append(Spacer(1, 8))
 
@@ -923,7 +923,7 @@ def build_body():
         "Fig. 3.1 shows the entity relationship diagram.", "body"))
     story.append(KeepTogether([
         Image(os.path.join(TMP, "erd.png"),
-              width=5.5 * inch, height=2.7 * inch),
+              width=TEXT_W, height=TEXT_W * 2.7 / 5.5),
         fig_cap("Fig. 3.1: Entity relationship diagram of the system")]))
     story.append(Spacer(1, 8))
 
@@ -992,12 +992,12 @@ def build_body():
         "by authentication, logging and reporting.", "body"))
     story.append(KeepTogether([
         Image(os.path.join(TMP, "dfd0.png"),
-              width=5.5 * inch, height=2.9 * inch),
+              width=TEXT_W, height=TEXT_W * 2.9 / 5.5),
         fig_cap("Fig. 3.2: Context level (level 0) data flow diagram")]))
     story.append(Spacer(1, 10))
     story.append(KeepTogether([
         Image(os.path.join(TMP, "dfd1.png"),
-              width=5.5 * inch, height=3.4 * inch),
+              width=TEXT_W, height=TEXT_W * 3.4 / 5.5),
         fig_cap("Fig. 3.3: Level 1 data flow diagram")]))
     story.append(Spacer(1, 8))
 
@@ -1085,10 +1085,12 @@ def build_body():
     for i, (fname, cap) in enumerate(shots):
         img = ImageReader(os.path.join(SHOTS, fname))
         iw, ih = img.getSize()
-        w = 5.4 * inch
+        # fill the usable text width and up to most of the page height
+        # (frame is 9.7" tall) so screenshots stay clearly readable
+        w = TEXT_W
         h = w * ih / iw
-        if h > 3.5 * inch:
-            h = 3.5 * inch
+        if h > 7.0 * inch:
+            h = 7.0 * inch
             w = h * iw / ih
         story.append(KeepTogether([
             Image(os.path.join(SHOTS, fname), width=w, height=h),
