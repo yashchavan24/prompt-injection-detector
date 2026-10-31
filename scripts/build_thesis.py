@@ -38,7 +38,8 @@ OUT_DIR = os.path.join(ROOT, "docs", "thesis")
 SHOTS = os.path.join(ROOT, "docs", "screenshots")
 TMP = os.path.join(OUT_DIR, "_parts")
 os.makedirs(TMP, exist_ok=True)
-FINAL = os.path.join(OUT_DIR, "Prompt_Injection_Detector_Project_Report.pdf")
+FINAL = os.path.join(OUT_DIR, os.environ.get("THESIS_OUT",
+                          "Prompt_Injection_Detector_Project_Report.pdf"))
 
 PAGE_W, PAGE_H = A4
 M_TOP, M_BOT = 1.0 * inch, 1.0 * inch
@@ -48,15 +49,14 @@ BODY_FONT = "Times-Roman"
 GOLD = colors.HexColor("#d4af37")
 NAVY = colors.HexColor("#0e1b45")
 
-TITLE = ("A MACHINE LEARNING-BASED FRAMEWORK FOR REAL-TIME DETECTION OF "
-         "PROMPT INJECTION ATTACKS IN LLM-INTEGRATED APPLICATIONS")
-SHORT_TITLE = ("A MACHINE LEARNING-BASED FRAMEWORK FOR REAL-TIME DETECTION OF "
-               "PROMPT INJECTION ATTACKS IN LLM-INTEGRATED APPLICATIONS")
+TITLE = "PROMPT INJECTION DETECTION IN LLM-INTEGRATED APPLICATIONS"
 TEAM = ["Yash Chavan", "Sohel Sheikh"]
 GUIDE = "Dr. Abhishek D. Pathak"
-GUIDE_DESG = "Assistant Professor"
-HOD = "Dr. A.D. Pathak"
+GUIDE_DESG = "Head of the Department"
+HOD = "Dr. Abhishek D. Pathak"
 YEAR = "Academic Year 2026-27"
+
+TITLE_MIXED = "Prompt Injection Detection in LLM-Integrated Applications"
 
 # ------------------------------------------------------------------ styles
 S = {}
@@ -270,9 +270,7 @@ def make_dfd1():
 def build_cover_and_title():
     story = [
         Spacer(1, 0.55 * inch),
-        Paragraph("A MACHINE LEARNING-BASED FRAMEWORK FOR<br/>REAL-TIME "
-                  "DETECTION OF PROMPT INJECTION ATTACKS<br/>IN "
-                  "LLM-INTEGRATED APPLICATIONS",
+        Paragraph(TITLE.replace(" LLM-INTEGRATED", "<br/>LLM-INTEGRATED"),
                   ParagraphStyle("t", fontName="Times-Bold", fontSize=22,
                                  leading=33, alignment=TA_CENTER,
                                  textColor=GOLD)),
@@ -303,11 +301,11 @@ def build_cover_and_title():
                                  leading=21, alignment=TA_CENTER,
                                  textColor=GOLD)),
         Spacer(1, 0.08 * inch),
-        Paragraph("DR. ABHISHEK D. PATHAK",
+        Paragraph(GUIDE.upper(),
                   ParagraphStyle("g2", fontName="Times-Bold", fontSize=16,
                                  leading=22, alignment=TA_CENTER,
                                  textColor=GOLD)),
-        Paragraph("Assistant Professor",
+        Paragraph(GUIDE_DESG,
                   ParagraphStyle("g3", fontName="Times-Roman", fontSize=14,
                                  leading=21, alignment=TA_CENTER,
                                  textColor=GOLD)),
@@ -347,11 +345,9 @@ def build_cover_and_title():
 def build_title_page():
     story = [
         Spacer(1, 0.5 * inch),
-        Paragraph("A MACHINE LEARNING-BASED FRAMEWORK FOR<br/>REAL-TIME "
-                  "DETECTION OF PROMPT INJECTION ATTACKS<br/>IN "
-                  "LLM-INTEGRATED APPLICATIONS",
-                  ParagraphStyle("t", fontName="Times-Bold", fontSize=20,
-                                 leading=30, alignment=TA_CENTER)),
+        Paragraph(TITLE.replace(" LLM-INTEGRATED", "<br/>LLM-INTEGRATED"),
+                  ParagraphStyle("t", fontName="Times-Bold", fontSize=22,
+                                 leading=33, alignment=TA_CENTER)),
         Spacer(1, 0.2 * inch),
         Paragraph("in partial fulfillment of the requirements for the award "
                   "of the degree<br/>of Bachelor of Technology in",
@@ -374,10 +370,10 @@ def build_title_page():
                   ParagraphStyle("g1", fontSize=14, leading=21,
                                  alignment=TA_CENTER)),
         Spacer(1, 0.08 * inch),
-        Paragraph("DR. ABHISHEK D. PATHAK",
+        Paragraph(GUIDE.upper(),
                   ParagraphStyle("g2", fontName="Times-Bold", fontSize=16,
                                  leading=22, alignment=TA_CENTER)),
-        Paragraph("Assistant Professor",
+        Paragraph(GUIDE_DESG,
                   ParagraphStyle("g3", fontSize=14, leading=21,
                                  alignment=TA_CENTER)),
         Spacer(1, 0.16 * inch),
@@ -422,7 +418,7 @@ def cert_page():
                   "fulfillment of the requirements for the award of the "
                   "degree of Bachelor of Technology in Computer Science and "
                   "Engineering (Cyber Security) during the %s."
-                  % (SHORT_TITLE.title(), TEAM[0], TEAM[1], GUIDE, YEAR), st),
+                  % (TITLE_MIXED, TEAM[0], TEAM[1], GUIDE, YEAR), st),
         Spacer(1, 0.9 * inch),
         Table([["", ""]],
               colWidths=[3.0 * inch, 2.6 * inch],
@@ -673,7 +669,7 @@ def build_body():
         "same protection to third-party chat sites such as ChatGPT. The "
         "work includes a rigorous evaluation under realistic conditions "
         "rather than same-dataset accuracy alone."
-        % SHORT_TITLE.title(), "body"))
+        % TITLE_MIXED, "body"))
 
     story.append(P("1.2 LITERATURE REVIEW", "section"))
     story.append(P(
@@ -1143,9 +1139,8 @@ def build_body():
 
     story.append(P("4.2 FUTURE SCOPE", "section"))
     story.append(P(
-        "The following directions are identified for future work on "
-        "separate pages of the final bound report, as required by the "
-        "format.", "body"))
+        "The following directions are identified for future work.",
+        "body"))
     for b in [
         "Adaptive-attack hardening: an adversarial evaluation loop in "
         "which paraphrased and encoded variants of blocked attacks are "
@@ -1235,9 +1230,8 @@ def build_body():
         "consulted the scikit-learn and FastAPI documentation, the "
         "OWASP Top 10 for Large Language Model Applications, and the "
         "research paper prepared by the team during this project, "
-        "entitled 'A Machine Learning-Based Framework for Real-Time "
-        "Detection of Prompt Injection Attacks in LLM-Integrated "
-        "Applications with Cross-Dataset Generalization Evaluation'.",
+        "entitled 'Prompt Injection Detection in LLM-Integrated "
+        "Applications'.",
         "nobody"))
 
     # ------------------------------------------------ TEAM PAGE
@@ -1289,14 +1283,23 @@ def build_body():
     ]))
     story.append(t)
     story.append(Spacer(1, 14))
-    story.append(P("Project Guide", "subsection"))
-    t2 = Table([[Paragraph("<b>Name</b>", ParagraphStyle(
-                    "c", fontName=BODY_FONT, fontSize=12)),
-                 Paragraph("<b>%s</b> (%s)" % (GUIDE, GUIDE_DESG),
-                           ParagraphStyle("c2", fontName=BODY_FONT,
-                                          fontSize=12)),
-                 photo_cell()]],
-               colWidths=[1.4 * inch, 3.1 * inch, 1.25 * inch])
+    story.append(P("PROJECT GUIDE", "subsection"))
+    def label_row(label, value):
+        cell = ParagraphStyle("lc", fontName=BODY_FONT, fontSize=12)
+        return [Paragraph("<b>%s</b>" % label if label == "Name" else label,
+                          cell),
+                Paragraph("<b>%s</b>" % value if label == "Name" else value,
+                          cell),
+                Paragraph("", cell)]
+    guide_rows = [[Paragraph("<b>Name</b>", ParagraphStyle(
+                       "c", fontName=BODY_FONT, fontSize=12)),
+                   Paragraph("<b>%s</b> (%s)" % (GUIDE, GUIDE_DESG),
+                             ParagraphStyle("c2", fontName=BODY_FONT,
+                                            fontSize=12)),
+                   photo_cell()]]
+    guide_rows.append(label_row("Contact No.", "__________________"))
+    guide_rows.append(label_row("E-mail ID", "__________________"))
+    t2 = Table(guide_rows, colWidths=[1.4 * inch, 3.1 * inch, 1.25 * inch])
     t2.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -1306,7 +1309,7 @@ def build_body():
     doc = BaseDocTemplate(os.path.join(TMP, "body.pdf"), pagesize=A4,
                           leftMargin=M_LEFT, rightMargin=M_RIGHT,
                           topMargin=M_TOP, bottomMargin=M_BOT,
-                          title=SHORT_TITLE.title(),
+                          title=TITLE_MIXED,
                           author="Yash Chavan, Sohel Sheikh")
     fr = Frame(M_LEFT, M_BOT, TEXT_W, PAGE_H - M_TOP - M_BOT, id="f")
     doc.addPageTemplates([PageTemplate(id="body", frames=[fr],
@@ -1352,9 +1355,9 @@ def build_front(page_map):
                                leading=21)
     toc_table_rows = []
     for num, title, kind in TOC_ROWS:
-        page = page_map.get(title) if title in page_map else None
+        page = page_map.get(title)
         if kind == "rom":
-            pnum = roman(page) if page else "--"
+            pnum = page if page else "--"
             left = Paragraph("<b>%s</b>" % title,
                              ParagraphStyle("tocb", fontName="Times-Bold",
                                             fontSize=12, leading=21))
@@ -1481,11 +1484,23 @@ def main():
     print("pass 2: front matter with real page numbers")
     build_front(page_map)
 
+    # Locate the front-matter headings in the provisional front.pdf so the
+    # Contents can show their roman labels, then rebuild the front matter.
+    front_needles = [("ABSTRACT", "ABSTRACT"),
+                     ("LIST OF TABLES", "LIST OF TABLES"),
+                     ("LIST OF FIGURES", "LIST OF FIGURES"),
+                     ("LIST OF SYMBOLS",
+                      "LIST OF SYMBOLS, ABBREVIATIONS AND NOMENCLATURE")]
+    fmap = find_pages(os.path.join(TMP, "front.pdf"), front_needles)
+    page_map.update({k: roman(v) for k, v in fmap.items()})
+    print("front map:", fmap)
+    build_front(page_map)
+
     out = pymupdf.open()
     for part in ["cover.pdf", "title.pdf", "front.pdf", "body.pdf"]:
         out.insert_pdf(pymupdf.open(os.path.join(TMP, part)))
     out.set_metadata({
-        "title": SHORT_TITLE.title(),
+        "title": TITLE_MIXED,
         "author": "Yash Chavan, Sohel Sheikh",
         "subject": "B.Tech CSE (Cyber Security) Final Year Project Report",
         "creator": "PromptShield",
